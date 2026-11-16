@@ -2532,16 +2532,20 @@ function box(x, y, w, h, colour) {
   }
 }
 
-// Lettering is the engine's own text, laid over the picture. The labels are kept and used
-// again every frame; one is only redrawn when what it says, its size or its colour changes.
+// Lettering is the engine's own text, laid over the picture, in VT323 — a terminal typeface
+// (SIL Open Font License), cut down to the characters the game uses and carried here as
+// base64 with `_` standing for `/`. The labels are kept and used again every frame; one is
+// only redrawn when what it says, its size or its colour changes.
+const FONT =
+  'd09GMgABAAAAAAesAAsAAAAAMwgAAAdgAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAgVwRCAreGMloATYCJAOBXAtwAAQgBQYHIBunJ1GUD8o8iJ8HtjH1oQVFgJYhgTKWLXFIHB7e3fW9AiEMaGDxLwhKl+69TKjR+BU6A8ksA5+RFWSFuUuFUAFRB6wuSEWrmdTO+z1j7k_sboJYVG2mnbeGy5WARte4VBHTGx4SrP8B6h93HeGxPP_7pT_Lf9QmJEqVpnEq_czsJrm0_ktTFAdy7zt338++3dCLRBjGM74LicN1oRAKozEiNpKnLEvVXRLfjV2lvIW6zyBMTBgmEA6BXcZqoO98B2IWZfgAwqNxHqjxRSf2TR7kKdH80NLUgLCkfIAAEAeM2UEaGhCAssNAQ5wNw0P4F0kjDEinhFrqmMg0zuARnrHJLoccc85VCJBGATZ1tDAJ6WMI7V+EMihXEmj+sqVc45+RII0MAHJ4v0tQQgXFlFNKGYG0+PsQTQyxxJFAIkkko2OQQhCTEYxkFAIRQiIA1QCsBMZB8h2gVwIJQBLvswE0M_QClxP4p0mwiZYEPgjCzYQ1m9AUQYU6pU14wDA+r2zU9UmNhY1fTzcsWvl3TffmgovD5cXG9LUb9EnFM_RJaqWxcrVvsL6d0tNjiisnNcSrmMzEjtYQPac4JiREz86PodSQaTGZrUYMPZuz6I+iJTEQfCVUoSuFv_tgA9EH23NyRgsEU7ohTbvwOg637CfVJExsiXM3gUFXk+iJhLfySUVjkjbKjgCxU_F9koImCIuKDGjamGE6okMczUhrcAtX8c87FakJde+NqyZa0MqgNDqWGz23gJDmZJM2pB5Y_DeljUYpv4Re1NHcSTeugWhBd25ykLBzyKgGuHR2A4T4Cq7moZ6zgGO6BvA9yWt+TJL7AqoOyA+7oF64dPy5m7UY152ikecxe3jycWacLsUQ3QMlMQw5ZLghVhSGahpZrZYqTKGeSY34ldLDPWcTvdrzOErnMSBcsPVIgyE01wVOIvZGtB+Pz6kQ6HYU0sLZ2rMUZ4mJ7hath6UXBLBja2F5oaFALaTV1fgkGgMOXMgv9iTD+II6u9qLUwN7cWKaNOy6yJ+4NrWMXzjLUxSIn3udzEhe_WCUV3t+gsEN8zhu05XrmfE2Szkwn+P86Ss_4UrPzw05uk2UzcH7ulynS5KxOyU9XY0KVeXOPaT2Bv70Hzsv2nLYWSzYI5F2WrvjsJKhJuTPQ9iaE8MBMYju5kBIrxsqLFIZH_xpXXLOkDAb6nqoBLIYMaSuuqNTTiLxc5ljny4N72seKtLVrprGF02Zvuxvk8EUE7Z4BVL37ptuL6dhJA8+f6vMyW4yg7ZjB80mkJyu0JV9+d0ZIl_JZsTEgCKndsWJDTvwVqsZl_W+ysSCiVMSC_4f26QIi+JkW6yx9cyDg0GzyW0np0j56GnTWE3jmKTrVDPxVBaLrq4UD9s5svnUQrrNk0hJdQdW9qWP+OgHjt8nFkO1YFm0WP_VK8BZPN3E4O0HOLSf7i0VJTMMF4KKwIaj56IGSBR8eQ_kLZJN4kC6OAeL_+YkaUP6lCoSonanFDD66wHWl9C9iyr_nlh6ZHhWdnhM0jWEJvLeDeg0oHTSEHmI1EPKoFN3j6QI0KDgOngdAaUvZ2QyGD5uoIVRX1wVXWJTbUk0gHPziCplDVILhpYAcLnFrSjEp0g3FE+LgFXkHTmNHZdJLiJFKDQxSF0cy4g0XkOi3CSn98qeefngdPvJCwcmak+x4IAzBoyybjp20SqkkgiLiBrxj_cw9_fQe2UP5G+e2YW_6rR4t_A94hsI1ky9+Q1DfHtzU0DDwE9objJjjAgZML1UP93I0rXH6JYc0FskLDN6oTNWS8ZY5xDSgDHFjEUUtzJVDZL5VBfZTG3+kU4MdE5YhwYTLiIRfHrHrfFL68TmMisRN3q1JzNUs46IBUHf71Hcfpiq0wPraiXekIosIwo66byuyeAif77tZo3D8zctpmzldcGtj8YzIPWFlGHMPwo0uWnrJBUhsbMDUe3HvEOV8xQBKMfWsjKIDFamHjobluS_WSJehMvmARcQj6sVHNIb5DawYP1BCWEpwPhmo5TtySrnGPe2iK7ck4S1+3i6+efDAUrui+rUwHZB4I_CyuHoIo4K394jQrK7d+zssDjIuDwNmkSpJK4JsSWW+cVvRiGYcoiufAsDvYI9VZBdF_3Tc5Xr3GxNs5zd5bUv2XPCUW5zu8Xh9zmFKYLFY7r54VDTCOFJhsGxI1KtetcbB7PM4K0Y7sPLFWDmaXSX_6o5eVQO_E1yavzGWq1p+CY6T8Bws0K3Lmv2dPguQOFVTolJQVP8vsZkbFdCdjmn7bpJmk6ZzklRkqBaPdTYMDGRxPISt0rtlNL5xTu_O8JWDee7cpoUtW8fMtCBSKrEBE6DJADIArFcS0sAATgXpT42JapHaSY_gI9nV14D+JSx++5_uSCDzxwURBIAQICWpgaIAwjL_I1K_b5YLSYA2F3W6v5MdW9OUWg3MqtM1PRayXVrCm5JOUrr38FDszveLBCvif439cP_GQRQzXesvMaufk+r2h6BdjUhKwMjYQY=';
 const LABELS = [];
-const SIZES = [0, 15, 28, 42, 58];
+const SIZES = [0, 24, 42, 63, 104]; // a letter is 0.4 of its size wide: 4.8 of the picture's pixels in the smallest
 let labelN = 0;
 let scene;
 // align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
 function text(str, x, y, colour, size, align) {
   let t = LABELS[labelN++];
-  if (!t) LABELS.push((t = scene.add.text(0, 0, '', { fontFamily: 'monospace', fontStyle: 'bold' })));
+  if (!t) LABELS.push((t = scene.add.text(0, 0, '', { fontFamily: 'V, monospace' })));
   str = String(str);
   size = SIZES[size || 1];
   if (t.text !== str) t.setText(str);
@@ -2550,7 +2554,7 @@ function text(str, x, y, colour, size, align) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
   }
-  t.setOrigin((align || 0) / 2, 0.12).setPosition(x * PX, y * PX).setVisible(true);
+  t.setOrigin((align || 0) / 2, 0.2).setPosition(x * PX, y * PX).setVisible(true);
 }
 
 // The crew's portraits, in pixel art, both in profile and with no outline: Darwin's frog — a
@@ -2584,7 +2588,7 @@ function gauge(x, y, w, share, colour) {
 
 // A name plate: what a mark is, and what to do about it.
 function tag(str, x, y, colour) {
-  const w = str.length * 4.6 + 6;
+  const w = str.length * 4.8 + 6;
   x = clamp(x, w / 2 + 2, BW - w / 2 - 2);
   y = clamp(y, 2, BH - 13);
   plate(x - w / 2, y, w, 11);
@@ -2625,7 +2629,7 @@ function mark(x, y, z, colour, label, always) {
     if (side) box(px - Math.sign(ex) * i, py - i, 1, 2 * i + 1, colour);
     else box(px - i, py - Math.sign(ey) * i, 2 * i + 1, 1, colour);
   }
-  if (side) tag(label, px - Math.sign(ex) * (label.length * 2.3 + 12), py - 5, colour);
+  if (side) tag(label, px - Math.sign(ex) * (label.length * 2.4 + 12), py - 5, colour);
   else tag(label, px, py - Math.sign(ey) * 13 - 5, colour);
 }
 
@@ -2741,7 +2745,7 @@ function drawHud() {
     gauge(CXS - 80, 84, 160, gChan, colRed);
   } else if (gMsgT > 0) {
     const size = gMsg.length > 30 ? 1 : 2;
-    const w = gMsg.length * size * 4.4 + 14;
+    const w = gMsg.length * (size > 1 ? 8.4 : 4.8) + 14;
     plate(CXS - w / 2, 62, w, 10 + size * 8);
     text(gMsg, CXS, 68, INK, size, 1);
   }
@@ -2756,11 +2760,11 @@ function drawHud() {
     // whoever is talking, and the line as far as it has been said
     plate(46, BH - 74, 296, 52);
     face(talk[0], 48, BH - 72, 2);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 110, BH - 69, GOLD);
-    text(talk[1].slice(0, talkT * 40), 110, BH - 58, INK);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 110, BH - 72, GOLD);
+    text(talk[1].slice(0, talkT * 40), 110, BH - 59, INK);
   }
   if (far) {
-    plate(CXS - far.length * 2.3 - 6, BH - 18, far.length * 4.6 + 12, 14);
+    plate(CXS - far.length * 2.4 - 6, BH - 18, far.length * 4.8 + 12, 14);
     text(far, CXS, BH - 14, INK, 1, 1);
   }
 
@@ -2836,7 +2840,11 @@ const config = {
   scene: { create, update },
 };
 
-new Phaser.Game(config);
+// The game starts once its typeface is ready (or cannot be had: then the system's will do).
+const start = () => new Phaser.Game(config);
+const type = new FontFace('V', Uint8Array.from(atob(FONT.replace(/_/g, '/')), (c) => c.charCodeAt(0)));
+document.fonts.add(type);
+type.load().then(start, start);
 
 let frameTex;
 let frameData;
