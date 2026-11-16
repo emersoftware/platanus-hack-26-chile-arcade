@@ -319,27 +319,37 @@ const MATERIALS = [
   [58, 44, 34, 150, 122, 92],
 ];
 const NMAT = MATERIALS.length;
-// The flyers' own colours for body, markings, nose, eyes and engines: Darwin's frog is leaf
-// green with a brown snout and golden eyes; the monito is grey-brown and cream, with a pink
-// nose and black eyes.
+// The flyers' own colours, the same as their portraits': back, the line along its edge, trim,
+// eyes, engines, (the nozzles keep their glow,) the stripe down the side, and the belly.
+// Darwin's frog has a leaf-green back edged in cream, a dark brown stripe, an orange-brown
+// belly and golden eyes; the monito is brown with a tan edge, darker sides, a cream belly,
+// pink ears and nose, and black eyes.
 const SKINS = [
   [
-    [16, 50, 28, 104, 196, 86],
-    [118, 128, 84, 240, 244, 186],
-    [78, 42, 24, 196, 124, 70],
-    [30, 22, 8, 236, 186, 60],
-    [8, 14, 12, 52, 70, 56],
+    [34, 84, 30, 118, 196, 72],
+    [124, 118, 86, 236, 228, 180],
+    [72, 38, 22, 160, 92, 50],
+    [60, 40, 10, 232, 190, 84],
+    [20, 12, 10, 84, 46, 32],
+    0,
+    [34, 18, 14, 84, 46, 32],
+    [92, 52, 28, 206, 134, 72],
   ],
   [
-    [52, 42, 38, 182, 160, 138],
-    [132, 120, 110, 252, 246, 234],
-    [150, 64, 88, 255, 156, 176],
+    [72, 44, 28, 176, 122, 76],
+    [104, 80, 56, 216, 176, 126],
+    [128, 64, 84, 244, 150, 170],
     [4, 4, 8, 60, 60, 80],
-    [10, 10, 14, 64, 60, 66],
+    [14, 10, 10, 70, 50, 46],
+    0,
+    [50, 30, 20, 122, 78, 50],
+    [126, 118, 108, 248, 240, 224],
   ],
 ];
 const FIRE = 7;
 const MUD = 8;
+const SIDE = 7; // on a flyer these two are its stripe and its belly instead
+const BELLY = 8;
 const GLINT = [0, 4, 5, 6, 14, 3, 0, 0, 1]; // how strongly each catches a highlight
 const NLIT = 16;
 const NLV = 24;
@@ -624,14 +634,14 @@ function partAt(x, y, z, who) {
   const d = Math.abs(x);
   if (who) {
     if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
-    if (inEll(d - 2.9, y - 13.5, z - 8.3, 1.5, 0.7, 1.6)) return PLUME; // ears
+    if (inEll(d - 2.9, y - 13.5, z - 8.3, 1.5, 0.7, 1.6)) return HEAD; // ears
     if (inEll(x, y - 2.4, z - 5, 0.9, 1.4, 0.8)) return HEAD; // nose
     if (inEll(x, y - 8.5, z - 5.2, 3.2, 6.2, 2.9)) return BODY; // head
     if (inEll(x, y - 42, z - 6.6, 1.3, 6.5, 1.2)) return BODY; // tail
     if (inEll(x, y - 16, z - 5, 3.2, 1.5, 2.9)) return PLUME; // collar
   } else {
     if (inEll(d - 1.8, y - 13.5, z - 7.1, 1.3, 2.1, 1.25)) return GLASS; // eyes
-    if (inEll(x, y - 4.5, z - 5, 1.25, 6.4, 1.15)) return HEAD; // snout
+    if (inEll(x, y - 4.5, z - 5, 1.25, 6.4, 1.15)) return BODY; // snout
   }
   if (inEll(x, y - 23, z - 5, 3.4, 21, 2.9)) return BODY;
   if (d > 3.4 && d < 5.6 && y > 18.5 && y < 23.5 && z > 2.5 && z < 5.5) return y < 19.5 ? ENGINE : BODY; // air intakes
@@ -730,7 +740,10 @@ function buildModel(who) {
         b.push(MPJ - y);
         c.push(z - MPK);
         w.push(y < 39 && z < 6 ? Math.max(0, Math.abs(x) - WING_ROOT) : 0);
-        col.push(v);
+        // the body is coloured like the animal: its back on what faces up, then the pale line,
+        // the stripe down its sides, and its belly underneath
+        const up = l < 0.5 ? 1 : nz / l;
+        col.push(v - BODY ? v : up > 0.5 ? BODY : up > 0.28 ? PLUME : up > -0.3 ? SIDE : BELLY);
         ni.push(q);
         ao.push(share > 0.5 ? 1 - Math.min(0.5, (share - 0.5) * 1.6) : 1 + Math.min(0.14, (0.5 - share) * 0.4));
         hot.push(Math.max(0, 1 - Math.hypot(Math.abs(x) - 3, y - 47, z - 4.5) / 9)); // how close to a burner: the fire lights it
@@ -1727,8 +1740,6 @@ const ZB = new Float32Array(BW * BH); // depth of what each pixel shows
 const PC = new Uint32Array(BW * BH); // a see-through cloud waiting over a pixel: its colour …
 const PA = new Uint8Array(BW * BH); // … and how much of it shows
 const YB = new Int16Array(BW); // per column: the ground has filled everything from here down
-const STAMP = new Uint32Array(BW * BH); // which flyer drew a pixel last (for outlines)
-let stampId = 0;
 const SJ = new Float32Array(16 * 6); // shadow casters this frame
 let nSJ = 0;
 let invMs = 1;
@@ -2061,7 +2072,7 @@ function drawTrails(f) {
 // square, nearest wins. Each is lit as part of a solid: by the sun, from the way its surface
 // faces; darker in the creases and wherever another part of the flyer stands in its light;
 // with a glint where the sun bounces towards the camera; and red from its own burners, near
-// them. Then a dark outline, so it reads over any ground.
+// them.
 const LV = new Float32Array(4096); // the sun on each direction a surface can face …
 const SP = new Float32Array(4096); // … and the glint there
 const STEP = new Float32Array(9);
@@ -2069,12 +2080,8 @@ let fx0 = 0;
 let fy0 = 0;
 let fv0 = 0;
 let fHalf = 0.5;
-let bx0 = 0;
-let bx1 = 0;
-let by0 = 0;
-let by1 = 0;
 
-function plotVoxel(ma, mb, mc, colour, mark) {
+function plotVoxel(ma, mb, mc, colour) {
   const sx = fx0 + ma * STEP[0] + mb * STEP[3] + mc * STEP[6];
   const sy = fy0 + ma * STEP[1] + mb * STEP[4] + mc * STEP[7];
   const dep = fv0 + ma * STEP[2] + mb * STEP[5] + mc * STEP[8];
@@ -2094,13 +2101,8 @@ function plotVoxel(ma, mb, mc, colour, mark) {
       if (ZB[p] <= dep) continue;
       ZB[p] = dep;
       FB[p] = colour;
-      STAMP[p] = mark;
     }
   }
-  if (xa < bx0) bx0 = xa;
-  if (xb > bx1) bx1 = xb;
-  if (ya < by0) by0 = ya;
-  if (yb > by1) by1 = yb;
 }
 
 // Which of a flyer's voxels have another part of it between them and the sun. The light's
@@ -2171,11 +2173,6 @@ function drawFlyer(f) {
     SP[q] = h > 0 ? Math.pow(h, 20) : 0;
   }
 
-  const id = ++stampId;
-  bx0 = BW;
-  bx1 = -1;
-  by0 = BH;
-  by1 = -1;
   const shade = f.shade;
   const flex = f.flex;
   const skin = (f.id + 1) * NMAT;
@@ -2186,22 +2183,7 @@ function drawFlyer(f) {
     let l = shade[i] ? (0.36 + 0.1 * LV[q]) * ao[i] * 15 : (0.36 + 0.64 * LV[q]) * ao[i] * 15 + SP[q] * GLINT[m];
     if (l > NLV - 1) l = NLV - 1;
     const c = JPAL[(skin + m) * NLV + (l | 0)];
-    plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, hot[i] ? mix(c, colRed, (hot[i] * fire) | 0) : c, id);
-  }
-
-  // outline: any free pixel that touches the flyer
-  const ox0 = Math.max(1, bx0 - 1);
-  const oy0 = Math.max(1, by0 - 1);
-  const ox1 = Math.min(BW - 1, bx1 + 1);
-  const oy1 = Math.min(BH - 1, by1 + 1);
-  for (let y = oy0; y < oy1; y++) {
-    for (let x = ox0, p = y * BW + ox0; x < ox1; x++, p++) {
-      if (STAMP[p] === id || ZB[p] < fv0 - 20) continue;
-      if (STAMP[p - 1] === id || STAMP[p + 1] === id || STAMP[p - BW] === id || STAMP[p + BW] === id) {
-        FB[p] = colOutline;
-        if (ZB[p] > fv0) ZB[p] = fv0;
-      }
-    }
+    plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, hot[i] ? mix(c, colRed, (hot[i] * fire) | 0) : c);
   }
 }
 
@@ -2477,16 +2459,15 @@ function glitch(amount) {
 
 const INK = pack(240, 246, 255);
 const DIM = pack(168, 200, 224);
-const PANEL = pack(16, 28, 48);
 const GOLD = pack(255, 214, 90);
 const WATER = pack(110, 180, 230);
 
-function box(x, y, w, h, colour, alpha) {
+function box(x, y, w, h, colour) {
   const x0 = Math.max(0, x | 0);
   const x1 = Math.min(BW, (x + w) | 0);
   const y1 = Math.min(BH, (y + h) | 0);
   for (let py = Math.max(0, y | 0); py < y1; py++) {
-    for (let p = py * BW + x0, e = py * BW + x1; p < e; p++) FB[p] = alpha ? mix(FB[p], colour, alpha) : colour;
+    for (let p = py * BW + x0, e = py * BW + x1; p < e; p++) FB[p] = colour;
   }
 }
 
@@ -2511,17 +2492,17 @@ function text(str, x, y, colour, size, align) {
   t.setOrigin((align || 0) / 2, 0.12).setPosition(x * PX, y * PX).setVisible(true);
 }
 
-// The crew's portraits, in pixel art, both in profile: Darwin's frog — a leaf-green back with
-// a pale edge, a dark stripe through a golden eye, a snout drawn out to a point — and the
-// monito del monte — big black eyes in a dark ring, round pink ears, a pink nose. Each is 28
-// dots by 24, row after row: a letter is a colour, a dot is nothing, and a number after
-// either repeats it.
+// The crew's portraits, in pixel art, both in profile and with no outline: Darwin's frog — a
+// leaf-green back with a pale edge, a dark stripe through a golden eye, a snout drawn out to a
+// point — and the monito del monte — big black eyes in a dark ring, round pink ears, a pink
+// nose. Each is 28 dots by 24, row after row: a letter is a colour, a dot is nothing, and a
+// number after either repeats it.
 const FACES = [
-  '.61k6.21kl6k5.15klg6l5k4.10klgG6g5l4k2.8kc8Gg10k5.3kB8c8g8k.2kB16c8g.2kb8B5y3B8c.2kb12ywk2yB2o4Bk.2kb12yk3yb2o4k.3kb3Bb4Bb3yk3ybo3k2.4kbBb2Bb6Bby3o3k2.6kb9Bb3o5k.8ko7b3o6k2.9ko2Bo10k3.11ko5Bo4k3.14ko7k3.16k2o7k3.15kN12k2.13kn14k.12kn14k.12kn14k.12',
-  '.4k2Fk2.7k4.11kF5k.5kF4k.9kF2p3F2k.3kF2p2F2k.7kF2p5F2k4Fp4Fk.7kF2p3PpFf6p4Fk.7kF2p2Pt9f3Fk.9kFp2t12f2k.9kF2t10d4f2k.9kFft8dk4df2k.8kF2f2t5dw2k3d2fk.7kF3f7dwk5df2k.6kF3f7dk6d2fk3.4kF3f7dk4Nd4p3k.3kF3f7d2k4d3p3Pk.3kF3f8d5m4P2pk.4kF2f3m16k.5kF2f2m11k4mk.7kf2m15k2.9km14k2.7k6m12k.8kN17k2.8kn19k.7kn19k.7kn19k.7',
+  '.89l6.21lg6l5.15lgG6g5l4.11c8Gg10.9B8c8g8.4B16c8g.3b8B5y3B8c.3b12ywk2yB2o4B.4b12yk3yb2o4.5b3Bb4Bb3yk3ybo3.7bBb2Bb6Bby3o3.9b9Bb3o5.10o7b3o6.12o2Bo10.15o5Bo4.18o7.21o7.19N12.16n14.14n14.14n14.13',
+  '.6F.25F5.7F4.11F2p3F2.5F2p2F2.9F2p5F2.4Fp4F.9F2p3PpFf6p4F.9F2p2Pt9f3F.11Fp2t12f2.11F2t10d4f2.11Fft8dk4df2.10F2f2t5dw2k3d2f.9F3f7dwk5df2.8F3f7dk6d2f.8F3f7dk4d5p3.5F3f7d2k4d3p3P.5F3f8d5m4P2p.6F2f3m16.7F2f2m11F4m.9f2m15.12m14.15m12.10N17.11n19.9n19.9n19.8',
 ].map((s) => s.replace(/(\D)(\d+)/g, (m, c, n) => c.repeat(n)));
 const FACE_INK = 'BFGNPbcdfgklmnoptwy';
-const FACE_COL = '542e207a4e324292364a6a8ac86882a05c32ece4b4261a18b07a4c76c4480e1416b2e470f8f0e02a4560ce8648f496aad8b07effffffe8be54'.match(/.{6}/g).map((h) => pack(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4), 16)));
+const FACE_COL = '542e207a4e32429236a8c8e0c86882a05c32ece4b4261a18b07a4c76c4480e1416b2e470f8f0e0e0f0ffce8648f496aad8b07effffffe8be54'.match(/.{6}/g).map((h) => pack(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4), 16)));
 // `flip` turns it to face left
 function face(who, x, y, size, flip) {
   for (let i = 0; i < 672; i++) {
@@ -2530,13 +2511,13 @@ function face(who, x, y, size, flip) {
   }
 }
 
+// A panel: CÓNDOR's blues, lighter at the top and running down to navy.
 function plate(x, y, w, h) {
-  box(x, y, w, h, PANEL, 150);
-  box(x, y, w, 1, DIM, 110);
+  for (let i = 0; i < h; i++) box(x, y + i, w, 1, PAL[26 - (((i * 23) / h) | 0)]);
 }
 
 function gauge(x, y, w, share, colour) {
-  box(x, y, w, 5, PANEL, 210);
+  box(x, y, w, 5, PAL[0]);
   box(x, y, w * clamp(share, 0, 1), 5, colour);
 }
 
@@ -2576,9 +2557,7 @@ function mark(x, y, z, colour) {
 function radar(cx, cy, R) {
   for (let y = -R; y <= R; y++) {
     const w = Math.round(Math.sqrt(R * R - y * y));
-    box(cx - w, cy + y, 2 * w, 1, PANEL, 150);
-    box(cx - w, cy + y, 2, 1, DIM, 200);
-    box(cx + w - 2, cy + y, 2, 1, DIM, 200);
+    box(cx - w, cy + y, 2 * w, 1, PAL[14 - ((y * 12) / R) | 0]);
   }
   const sx = Math.sin(sq.yaw);
   const sy = -Math.cos(sq.yaw);
@@ -2607,17 +2586,21 @@ function drawHud() {
   for (const t of LABELS) t.setVisible(false);
   labelN = 0;
   if (G.mode !== PLAY) {
-    box(0, 84, BW, 46, PANEL, 120);
+    plate(0, 84, BW, 76);
     text(G.mode === OVER ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 92, INK, 4, 1);
-    if (G.mode === OVER) text('PUNTAJE ' + G.score, CXS, 144, INK, 2, 1);
-    text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 136, INK, 1, 1);
-    text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 147, DIM, 1, 1);
-    face(0, 10, 158, 3);
-    face(1, BW - 94, 158, 3, 1);
-    text('DARWIN', 52, 230, GOLD, 1, 1);
-    text('MONITO', BW - 52, 230, GOLD, 1, 1);
-    if ((now * 2) & 1) text('START 1: UN JUGADOR · START 2: DOS', CXS, 240, INK, 2, 1);
-    text('RÉCORD ' + G.best, CXS, 258, DIM, 1, 1);
+    if (G.mode === OVER) text('PUNTAJE ' + G.score, CXS, 127, GOLD, 2, 1);
+    else {
+      text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 127, INK, 1, 1);
+      text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 138, DIM, 1, 1);
+    }
+    text('RÉCORD ' + G.best, CXS, 149, DIM, 1, 1);
+    plate(4, 164, 92, 84);
+    plate(BW - 96, 164, 92, 84);
+    face(0, 8, 164, 3);
+    face(1, BW - 92, 164, 3, 1);
+    text('DARWIN', 50, 237, GOLD, 1, 1);
+    text('MONITO', BW - 50, 237, GOLD, 1, 1);
+    if ((now * 2) & 1) text('START 1: UN JUGADOR · START 2: DOS', CXS, 249, INK, 2, 1);
     plate(0, BH - 36, BW, 36);
     text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 27, INK, 1, 1);
     text('VUELA BAJO · APAGA INCENDIOS · RESCATA GENTE · DERRIBA DRONES', CXS, BH - 13, DIM, 1, 1);
@@ -2632,10 +2615,10 @@ function drawHud() {
   if (goal) mark(goal.x, goal.y, goal.z + 4, folk[0] ? INK : colFire);
   if (G.shield < 30 && (now * 4) & 1) {
     // little shield left: the frame flashes
-    box(0, 0, BW, 3, colRed, 160);
-    box(0, BH - 3, BW, 3, colRed, 160);
-    box(0, 0, 3, BH, colRed, 160);
-    box(BW - 3, 0, 3, BH, colRed, 160);
+    box(0, 0, BW, 3, colRed);
+    box(0, BH - 3, BW, 3, colRed);
+    box(0, 0, 3, BH, colRed);
+    box(BW - 3, 0, 3, BH, colRed);
   }
 
   // score, the multiplier, and how long the condor has kept low
@@ -2652,10 +2635,10 @@ function drawHud() {
   text('ESCUDO', rx + 4, 8, DIM);
   gauge(rx + 50, 9, 56, G.shield / 100, G.shield < 30 ? colRed : INK);
   text('IMPULSO', rx + 4, 20, DIM);
-  box(rx + 50, 21, 56, 5, PANEL, 210);
+  box(rx + 50, 21, 56, 5, PAL[0]);
   crew.forEach((f, i) => box(rx + 50, 21 + i * 3, 0.56 * f.stam, crew[1] ? 2 : 5, i ? GOLD : INK)); // one bar each
   text('AGUA', rx + 4, 32, DIM);
-  for (let i = 0; i < 3; i++) box(rx + 50 + i * 12, 33, 9, 5, WATER, i < G.water ? 0 : 60);
+  for (let i = 0; i < 3; i++) box(rx + 50 + i * 12, 33, 9, 5, i < G.water ? WATER : PAL[0]);
 
   // height: the ground below (rising from the foot of the scale) and the condor above it
   const foot = BH - 10;
@@ -2663,10 +2646,10 @@ function drawHud() {
   plate(4, BH - 80, 36, 76);
   text('ALT', 8, BH - 76, DIM);
   text((G.agl * 10) | 0, 8, BH - 66, INK);
-  box(20, foot - 44, 4, 44, PANEL, 220);
+  box(20, foot - 44, 4, 44, PAL[0]);
   box(20, rung(G.gnd), 4, foot - rung(G.gnd), DIM);
-  box(16, rung(CA), 12, 1, DIM, 140);
-  box(16, rung(STRATO), 12, 1, DIM, 140);
+  box(16, rung(CA), 12, 1, DIM);
+  box(16, rung(STRATO), 12, 1, DIM);
   crew.forEach((f, i) => box(14, rung(f.z) - 1, 16, 2, i ? GOLD : INK));
 
   radar(BW - 32, BH - 32, 27);
@@ -2677,17 +2660,18 @@ function drawHud() {
 
   // what is going on
   if (G.hacked) {
-    box(0, 58, BW, 56, PANEL, 130);
+    plate(CXS - 100, 58, 200, 56);
     text('¡HACKEADO!', CXS, 66, colRed, 3, 1);
     text('AGITA LA PALANCA Y MACHACA B1', CXS, 92, INK, 1, 1);
     gauge(CXS - 80, 103, 160, G.purge, INK);
   } else if (G.chan > 0) {
-    box(0, 62, BW, 30, PANEL, 130);
+    plate(CXS - 150, 62, 300, 30);
     text('HACKEO ENTRANTE: TONEL O DISPARA', CXS, 67, colRed, 2, 1);
     gauge(CXS - 80, 84, 160, G.chan, colRed);
   } else if (G.msgT > 0) {
     const size = G.msg.length > 30 ? 1 : 2;
-    box(0, 62, BW, 10 + size * 8, PANEL, 110);
+    const w = G.msg.length * size * 4.4 + 14;
+    plate(CXS - w / 2, 62, w, 10 + size * 8);
     text(G.msg, CXS, 68, INK, size, 1);
   }
   const far = goal
