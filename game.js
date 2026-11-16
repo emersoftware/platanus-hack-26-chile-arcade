@@ -803,6 +803,7 @@ function makeFlyer(id) {
     dash: 0, // seconds of dash still to run
     rest: 0,
     kick: 0, // the bounce off the ground
+    graze: 0, // counts down after a touch of the ground: forgiven at first, then not
     inv: 0, // seconds of safety after a hit
     fireCd: 0,
     lock: null, // what its guns are tracking
@@ -1319,7 +1320,7 @@ function simulate(dt) {
     f.bank = (f.turn * P.bankAngle * Math.PI) / 180;
     f.pitch = Math.atan2(f.lift * P.climbRate, P.speed);
     f.kick *= Math.exp(-4 * dt);
-    f.z = Math.min(P.ceiling, f.z + (f.lift * P.climbRate * fast + f.kick) * dt);
+    f.z = Math.min(P.ceiling, f.z + (f.lift * P.climbRate * fast * (f.lift < 0 && f.agl < 4 ? Math.max(0.35, (f.agl - 1) / 3) : 1) + f.kick) * dt);
     if (duo) f.s += f.turn * 26 * dt;
 
     // barrel rolls: one full turn about the nose, left or right, sliding it that way. While
@@ -1376,13 +1377,24 @@ function simulate(dt) {
     f.yaw = sq.yaw + (duo ? f.turn * 0.3 : 0); // with two, the nose swings with the stick, to aim
     if (duo) f.z = clamp(f.z, mid - 14, mid + 14);
 
-    // the ground is solid: hitting it costs shield and throws the flyer back up
+    // the ground and the water are solid, but a touch is forgiven: the flyer scrapes along
+    // for a moment, bounced up a little, throwing dust or spray. Only if it is still down
+    // after that, or comes down again too soon, does it cost shield and get thrown back up
     const ground = Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 3, f.y + sy * 3));
+    f.graze = Math.max(0, f.graze - dt);
     if (f.z - ground < 1) {
       f.z = ground + 1;
-      f.kick = 34;
-      G.low = 0;
-      hurt(f, 30, '¡CHOQUE!');
+      puff(f.x, f.y, ground + 0.3, spread() * 6, spread() * 6, 3 + rand() * 4, 0.5, GR[cell(f.x, f.y)] > G_SHALLOW * GS ? 4 : 3, 0.9);
+      if (!f.graze) {
+        f.graze = 1.3;
+        f.kick = 12;
+        say('¡ROZASTE! SUBE', 0.9);
+        tone(700, 500, 0.12, 'square', 0.06);
+      } else if (f.graze < 0.85) {
+        f.kick = 34;
+        G.low = 0;
+        hurt(f, 20, '¡CHOQUE!');
+      }
     }
     f.agl = f.z - ground;
     G.agl = Math.min(G.agl, f.agl);
