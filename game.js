@@ -463,13 +463,13 @@ function buildWorld(seed) {
         const edge = smooth(0.93, 0.995, x / N); // far east: level off into a high snowfield
         e = 3 + 2 * n + hills + peaks;
         const bed = 2.5 + rise * 22; // the ground falls away into the ravine, down to the river
-        if (e > bed) e = bed + (e - bed) * smooth(0.012, 0.13, cut);
+        if (e > bed) e = bed + (e - bed) * smooth(0.024, 0.14, cut);
         e = clamp(e + (SNOWFIELD - e) * edge, 0.5, HMAX) * smooth(-0.004, 0.03, u - COAST); // the land comes up out of the sea
         if (cut < 0.006 && rise > 0.4 && edge < 0.01 && r % 11 === 0) QUEB.push(i);
 
         // colour by height: green low down, then blue-grey rock and snow
         if (u - COAST < 0.012) g = G_SAND;
-        else if (cut < 0.012 && edge < 0.01) g = G_SHALLOW - 2; // river
+        else if (cut < 0.024 && edge < 0.01) g = G_SHALLOW - 2; // river
         else {
           g = e < 6 ? 24 + e * 0.7 : e < 34 ? 28 + (e - 6) * 0.36 : e < 90 ? 38 + (e - 34) * 0.29 : 54 + (e - 90 + jit * 4) * 0.5;
           if (e < 34) g += (f - 0.5) * 7 + (rough[i] - 0.5) * 5; // lighter and darker stretches of green
@@ -1138,13 +1138,16 @@ function light(x, y) {
 }
 
 // A wildfire: a few fires that spread until they are put out with water from the sea or a river.
-// The sea or river nearest the crew: rings of places, further and further out.
+// The sea or river nearest the crew: rings of places, further and further out, each looked
+// over from dead ahead round to behind, so of two as near it is the one in front.
 function findWater() {
   for (let r = 6; r < 500; r += 6) {
-    for (let a = r; a < r + 6; a += 0.4) {
-      const x = sq.x + Math.sin(a) * r;
-      const y = sq.y - Math.cos(a) * r;
-      if (x > 4 && x < N - 4 && GR[cell(x, y)] <= G_SHALLOW * GS) return { x, y, z: groundAt(x, y) };
+    for (let a = 0; a < 3.2; a += 6 / r) {
+      for (const t of [sq.yaw + a, sq.yaw - a]) {
+        const x = sq.x + Math.sin(t) * r;
+        const y = sq.y - Math.cos(t) * r;
+        if (x > 4 && x < N - 4 && GR[cell(x, y)] <= G_SHALLOW * GS) return { x, y, z: groundAt(x, y) };
+      }
     }
   }
 }
@@ -1443,11 +1446,11 @@ function simulate(dt) {
 
       // water: each flyer hangs a bucket on a line, as helicopters do. Dip it in the sea or a
       // river to fill it, B5 to let a load go
-      if (GR[cell(f.x, f.y)] <= G_SHALLOW * GS && G.water < 3) {
-        if (f.agl < ROPE + 0.5) {
+      if (G.water < 3 && [0, 4, -4].some((o) => GR[cell(f.x + sy * o, f.y - sx * o)] <= G_SHALLOW * GS || GR[cell(f.x + sx * o, f.y + sy * o)] <= G_SHALLOW * GS)) {
+        if (f.agl < ROPE + 2) {
           G.fill += dt;
           puff(f.x - sx * 2, f.y - sy * 2, ground + 0.3, spread() * 5 - sx * 8, spread() * 5 - sy * 8, 5 + rand() * 5, 0.5, 3, 0.8);
-          if (G.fill > 0.3) {
+          if (G.fill > 0.08) {
             G.fill = 0;
             say('AGUA EN EL BALDE ' + ++G.water + '/3', 1);
             tone(300, 600, 0.12, 'sine', 0.1);
@@ -2408,7 +2411,7 @@ function drawThings() {
     for (const f of crew) {
       const x = f.x - Math.sin(f.yaw) * 2;
       const y = f.y + Math.cos(f.yaw) * 2;
-      const z = Math.max(groundAt(x, y) + 0.5, f.z - ROPE);
+      const z = Math.max(groundAt(x, y) + 0.5, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
       beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
       ball(x, y, z, 0.55, G.water ? GLASS : FIRE);
     }
