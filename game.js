@@ -320,10 +320,11 @@ const MATERIALS = [
 ];
 const NMAT = MATERIALS.length;
 // The flyers' own colours, the same as their portraits': back, the line along its edge, trim,
-// eyes, engines, (the nozzles keep their glow,) the stripe down the side, and the belly.
+// eyes, engines, the glow of the nozzles, the stripe down the side, and the belly.
 // Darwin's frog has a leaf-green back edged in cream, a dark brown stripe, an orange-brown
 // belly and golden eyes; the monito is brown with a tan edge, darker sides, a cream belly,
 // pink ears and nose, and black eyes.
+const ICE = [42, 69, 96, 42, 69, 96]; // a nozzle: navy round the white of the flame
 const SKINS = [
   [
     [34, 84, 30, 118, 196, 72],
@@ -331,7 +332,7 @@ const SKINS = [
     [72, 38, 22, 160, 92, 50],
     [60, 40, 10, 232, 190, 84],
     [20, 12, 10, 84, 46, 32],
-    0,
+    ICE,
     [34, 18, 14, 84, 46, 32],
     [92, 52, 28, 206, 134, 72],
   ],
@@ -341,7 +342,7 @@ const SKINS = [
     [128, 64, 84, 244, 150, 170],
     [4, 4, 8, 60, 60, 80],
     [14, 10, 10, 70, 50, 46],
-    0,
+    ICE,
     [50, 30, 20, 122, 78, 50],
     [126, 118, 108, 248, 240, 224],
   ],
@@ -2071,7 +2072,7 @@ function drawTrails(f) {
 // One flyer. Every visible voxel is placed with the flyer's own axes and drawn as a small
 // square, nearest wins. Each is lit as part of a solid: by the sun, from the way its surface
 // faces; darker in the creases and wherever another part of the flyer stands in its light;
-// with a glint where the sun bounces towards the camera; and red from its own burners, near
+// with a glint where the sun bounces towards the camera; and pale from its own burners, near
 // them.
 const LV = new Float32Array(4096); // the sun on each direction a surface can face …
 const SP = new Float32Array(4096); // … and the glint there
@@ -2176,20 +2177,25 @@ function drawFlyer(f) {
   const shade = f.shade;
   const flex = f.flex;
   const skin = (f.id + 1) * NMAT;
-  const fire = Math.min(1, f.thr) * 210; // how brightly the burners light the tail
+  const fire = Math.min(1, f.thr) * 90; // how brightly the burners light the tail
   for (let i = 0; i < n; i++) {
     const q = ni[i];
     const m = col[i];
     let l = shade[i] ? (0.36 + 0.1 * LV[q]) * ao[i] * 15 : (0.36 + 0.64 * LV[q]) * ao[i] * 15 + SP[q] * GLINT[m];
     if (l > NLV - 1) l = NLV - 1;
     const c = JPAL[(skin + m) * NLV + (l | 0)];
-    plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, hot[i] ? mix(c, colRed, (hot[i] * fire) | 0) : c);
+    plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, hot[i] ? mix(c, HEAT[1], (hot[i] * fire) | 0) : c);
   }
+  drawFlames(f, s);
 }
 
 // Something soft and round at a place in the world: `r` across, `dens` thick at its middle.
 function soft(x, y, z, r, colour, dens) {
-  if (!project(x, y, z)) return;
+  if (project(x, y, z)) blot(r, colour, dens);
+}
+
+// The same, at the place on screen the last projection left (prX, prY, at depth prV).
+function blot(r, colour, dens) {
   r *= prM;
   const x0 = Math.max(0, Math.floor(prX - r));
   const x1 = Math.min(BW - 1, Math.ceil(prX + r));
@@ -2205,32 +2211,31 @@ function soft(x, y, z, r, colour, dens) {
   }
 }
 
-// The burners. Each flame is a string of soft lights from deep in the nozzle to its tip: a
-// white-hot root, then red, darkening as it cools. It grows with the throttle and leaps out
+// The burners. Each flame is a slim string of soft lights from the nozzle to its tip:
+// a white-hot root, then ice blue, deepening as it cools. It grows with the throttle and leaps out
 // in a dash, it flickers, it shows shock diamonds when the burners are wide open, and in a
 // turn it trails round the inside of the curve the flyer has flown.
-const HEAT = [pack(255, 190, 170), pack(255, 70, 76), pack(255, 30, 58), pack(206, 18, 44), pack(130, 8, 30)];
+const HEAT = [pack(255, 255, 255), pack(214, 240, 255), pack(150, 208, 250), pack(96, 160, 236), pack(60, 108, 204)];
 const TIP = new Float32Array(3);
-function drawFlames(f) {
-  const a = f.ax;
+// `s` is the size of the flyer's design unit on screen, as it was just drawn
+function drawFlames(f, s) {
   const open = Math.max(0, (f.thr - 0.3) / 0.7); // 0 idling · 1 burners lit · more in a dash
   const len = (1.1 + open * 3.8) * (1 + 0.1 * Math.sin(now * 53) + 0.06 * Math.sin(now * 31 + 2));
   for (const nz of NOZZLES) {
-    modelPoint(f, nz[0], nz[1] + 2.5, nz[2], TIP, 0);
-    for (let i = 0; i < 18; i++) {
+    for (let i = 17; i >= 0; i--) {
+      // from the tip back to the root, so the white of the root is what shows from behind;
+      // each light is placed in the flyer's own frame, like its voxels, so it stays on the nozzle
       const t = i / 17;
       const d = t * len;
-      const bend = f.turn * d * d * 0.09;
-      const wob = Math.sin(now * 37 + i * 1.7 + nz[0]) * t * 0.08 * (1 + open);
-      const diamond = open > 0.6 ? 0.75 + 0.25 * Math.sin(d * 5 - now * 26) : 1;
-      soft(
-        TIP[0] - a[3] * d + a[0] * (bend + wob),
-        TIP[1] - a[4] * d + a[1] * (bend + wob),
-        TIP[2] - a[5] * d + a[2] * (bend + wob) + wob,
-        (0.4 + open * 0.08) * Math.pow(1 - t, 0.6) + 0.06,
-        HEAT[t < 0.07 ? 0 : Math.min(4, 1 + ((t * 3.6) | 0))],
-        (1 - t * 0.8) * 240 * diamond,
-      );
+      const wob = Math.sin(now * 37 + i * 1.7 + nz[0]) * t * 0.08 * (1 + open) * invMs;
+      const ma = nz[0] + f.turn * d * d * 0.09 * invMs + wob;
+      const mb = nz[1] - d * invMs;
+      const mc = nz[2] + wob;
+      prX = fx0 + ma * STEP[0] + mb * STEP[3] + mc * STEP[6];
+      prY = fy0 + ma * STEP[1] + mb * STEP[4] + mc * STEP[7];
+      prV = fv0 + ma * STEP[2] + mb * STEP[5] + mc * STEP[8];
+      prM = s * invMs;
+      blot((0.15 + open * 0.07) * (1 - t) + 0.04, HEAT[t < 0.07 ? 0 : Math.min(4, 1 + ((t * 3.6) | 0))], (1 - t * 0.9) * 230 * (open > 0.6 ? 0.75 + 0.25 * Math.sin(d * 5 - now * 26) : 1));
     }
   }
 }
@@ -2722,7 +2727,6 @@ function drawFrame() {
     for (const f of crew) {
       if (f.inv > 0 && (now * 12) & 1) continue; // it blinks while it is safe from harm
       drawFlyer(f);
-      drawFlames(f);
     }
   }
   drawThings();
