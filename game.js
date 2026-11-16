@@ -863,6 +863,18 @@ let sat = null; // the hackers' satellite
 let em = null; // the emergency under way: k 0 a wildfire, 1 a mudslide
 const QUEB = []; // cells in the ravines of the cordillera, where mudslides start
 
+// The crew talk: Darwin (0) and the monito (1) tell the story and say what to do. Lines wait
+// their turn; one given a number is news — said next, and only once a game.
+const talk = []; // who, line, who, line …
+let talkT = 0;
+let told = 0;
+function tell(who, line, once) {
+  if (told & once) return;
+  told |= once;
+  if (once) talk.splice(2, 0, who, line); // news comes next, ahead of the story
+  else talk.push(who, line);
+}
+
 // Sound: tones and bursts of noise, made on the spot.
 let AC = null; // the audio context, once Phaser has one
 let NOISE = null;
@@ -980,7 +992,7 @@ function join() {
   crew[1] = mate;
   Object.assign(mate, { z: lead.z, s: 8, stam: 100, inv: 2, trailLen: 0, kick: 0, rollT: 0, x: lead.x, y: lead.y });
   lead.s = -8;
-  say('¡LLEGA EL MONITO DEL MONTE!', 2.5);
+  tell(1, '¡MONITO EN EL AIRE!\nVOLEMOS JUNTOS, DARWIN.');
 }
 
 function startGame(two) {
@@ -989,7 +1001,10 @@ function startGame(two) {
   sat = em = null;
   crew.length = 1;
   Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: Math.max(lead.z, groundAt(lead.x, lead.y) + 20) });
-  say('¡DESPEGA, DARWIN!', 2);
+  talk.length = talkT = told = 0;
+  tell(0, 'AÑO 3000. LAS IA ENEMIGAS\nNOS ATACAN CON SUS DRONES.');
+  tell(1, 'LA BIOINGENIERÍA NOS HIZO SÚPER LISTOS:\nPILOTEAMOS MEJOR QUE CUALQUIER IA.');
+  tell(0, 'DISPARA CON B1. VUELA BAJO\nPARA MULTIPLICAR LOS PUNTOS.');
   if (two) join();
 }
 
@@ -1029,6 +1044,8 @@ function modelPoint(f, ma, mb, mc, out, o) {
 }
 
 function spawnDrone(k) {
+  if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ\nUN TONEL ANTES DE QUE ENTRE.', 2);
+  else tell(0, '¡DRONES IA AL FRENTE!\nAPUNTA CON LA NARIZ Y DISPARA.', 1);
   drones.push({ k, hp: k ? 4 : 2, r: k ? 1.9 : 1.5, a: 190, s: spread() * 50, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: 1.5 + rand(), ch: 0, x: 0, y: 0, z: 0 });
 }
 
@@ -1056,7 +1073,8 @@ function startFire() {
   if (!at) return false;
   for (let i = 0; i < 5; i++) light(at[0] + spread() * 8, at[1] + spread() * 8);
   em = { k: 0, t: 0 };
-  say('¡INCENDIO! CARGA AGUA Y SUÉLTALA CON B5', 3);
+  say('¡INCENDIO!');
+  tell(1, '¡INCENDIO! CARGA AGUA VOLANDO RASANTE\nSOBRE EL MAR O UN RÍO Y SUÉLTALA CON B5.', 8);
   return true;
 }
 
@@ -1100,7 +1118,8 @@ function startFlood() {
   }
   for (let i = 70; i < 230; i += 45) folk.push({ x: path[i * 2], y: path[i * 2 + 1], z: groundAt(path[i * 2], path[i * 2 + 1]), i });
   em = { k: 1, t: 0, path, at: 0, saved: 0 };
-  say('¡ALUVIÓN! RESCATA A LA GENTE VOLANDO BAJO', 3);
+  say('¡ALUVIÓN!');
+  tell(1, '¡ALUVIÓN! PASA BAJITO SOBRE LAS\nBALIZAS PARA RESCATAR A LA GENTE.', 16);
   return true;
 }
 
@@ -1139,6 +1158,11 @@ function simulate(dt) {
   G.shake *= Math.exp(-5 * dt);
   G.flash *= Math.exp(-4 * dt);
   const play = G.mode === PLAY;
+  if (talk[1] && (talkT += dt) > talk[1].length * 0.03 + 2.6) {
+    talk.splice(0, 2); // the line has been read: on to the next
+    talkT = 0;
+  }
+  if (play && G.shield < 35) tell(1, 'ESCUDO BAJO. LOS RESCATES Y LOS\nINCENDIOS APAGADOS LO RECUPERAN.', 128);
   if (play && !crew[1] && pressed.START2) join();
   const duo = crew.length > 1;
   const n = crew.length;
@@ -1461,6 +1485,7 @@ function simulate(dt) {
         G.hacked = 1;
         G.purge = 0;
         G.low = 0;
+        tell(0, '¡NOS HACKEARON! AGITA LA PALANCA\nY MACHACA B1 PARA SACARLO.', 64);
       }
     }
   }
@@ -1478,7 +1503,7 @@ function simulate(dt) {
       G.satT -= dt;
       if (G.satT < 0) {
         sat = { x: sq.x + cfx * 90, y: sq.y + cfy * 90, z: 285, hp: 14, r: 4.5, cd: 3 };
-        say('SATÉLITE HACKER EN LA ESTRATÓSFERA', 2.5);
+        tell(1, 'EL SATÉLITE HACKER ESTÁ EN LA\nESTRATÓSFERA. SUBE Y DESTRÚYELO.', 32);
       }
     } else if (sat.hp <= 0) {
       boom(sat.x, sat.y, sat.z, 40);
@@ -1511,6 +1536,7 @@ function simulate(dt) {
       const y = sq.y + sy * 130 + sx * off;
       const z = Math.max(groundAt(x, y), groundAt(x - rx * 18, y - sx * 18), groundAt(x + rx * 18, y + sx * 18)) + 2;
       fences.push({ x, y, nx: sx, ny: sy, w: duo ? 34 : 22, z0: z, z1: z + 15, was: [-1, -1] });
+      tell(1, 'VALLA LÁSER ADELANTE: CRÚZALA\nHACIENDO UN TONEL CON B2 O B3.', 4);
     }
     for (let i = fences.length - 1; i >= 0; i--) {
       const f = fences[i];
@@ -2418,6 +2444,37 @@ function text(str, x, y, colour, size, align) {
   t.setOrigin((align || 0) / 2, 0.12).setPosition(x * PX, y * PX).setVisible(true);
 }
 
+// The crew's portraits, in pixel art: Darwin the frog and the monito del monte, face on. Each
+// is drawn from its left half (12 dots a row, 22 rows; a letter is a colour, a dot is nothing)
+// and mirrored.
+const FACES = [
+  '...............kkkkk......kGgggGk....kGgyyyygk...kgyykkyygkl.kgyykkyygkl.kGgyyyyggllkkGggggggglwkGGgggggggllkGggggggggglkGggggggggklkGggggggggggkkGggggggggg.kkkkkkkkkkk.kcccccccccc..kccckkcccc..kcckkkcccc...kccccckkc....kkcccccc......kkkkkk...nnnnnnnnn..nnnnnnnnnn',
+  '..............kkkk.......kffffk.....kfppppfk....kfppppfkkkkkkfpppfffffff.kfpffffffff.kffffddddff.kfffdkkkkdf.kffdkkwkkkd.kffdkkkkkkd.kfffdkkkkdc.kffffddddcc.kfffffccccc..kffffccccp..kfffcccccp...kffccccck...kkfcccckk.....kkccccc.......kkkkk...nnnnnnnnn..nnnnnnnnnn',
+];
+const FACE_INK = 'kGglwycnfdp';
+const FACE_COL = [
+  pack(14, 20, 22),
+  pack(36, 104, 48),
+  pack(96, 190, 84),
+  pack(164, 224, 116),
+  pack(255, 255, 255),
+  pack(236, 186, 60),
+  pack(240, 240, 198),
+  pack(42, 69, 96),
+  pack(158, 134, 114),
+  pack(60, 44, 40),
+  pack(244, 150, 172),
+];
+function face(who, x, y, size) {
+  for (let i = 0; i < 264; i++) {
+    const c = FACE_INK.indexOf(FACES[who][i]);
+    if (c < 0) continue;
+    const row = y + ((i / 12) | 0) * size;
+    box(x + (i % 12) * size, row, size, size, FACE_COL[c]);
+    box(x + (23 - (i % 12)) * size, row, size, size, FACE_COL[c]);
+  }
+}
+
 function plate(x, y, w, h) {
   box(x, y, w, h, PANEL, 150);
   box(x, y, w, 1, DIM, 110);
@@ -2498,8 +2555,14 @@ function drawHud() {
     box(0, 84, BW, 46, PANEL, 120);
     text(G.mode === OVER ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 92, INK, 4, 1);
     if (G.mode === OVER) text('PUNTAJE ' + G.score, CXS, 144, INK, 2, 1);
-    if ((now * 2) & 1) text('START 1: UN JUGADOR · START 2: DOS', CXS, 226, INK, 2, 1);
-    text('RÉCORD ' + G.best, CXS, 248, DIM, 1, 1);
+    text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 136, INK, 1, 1);
+    text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 147, DIM, 1, 1);
+    face(0, 18, 160, 3);
+    face(1, BW - 90, 160, 3);
+    text('DARWIN', 54, 228, GOLD, 1, 1);
+    text('MONITO', BW - 54, 228, GOLD, 1, 1);
+    if ((now * 2) & 1) text('START 1: UN JUGADOR · START 2: DOS', CXS, 240, INK, 2, 1);
+    text('RÉCORD ' + G.best, CXS, 258, DIM, 1, 1);
     plate(0, BH - 36, BW, 36);
     text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 27, INK, 1, 1);
     text('VUELA BAJO · APAGA INCENDIOS · RESCATA GENTE · DERRIBA DRONES', CXS, BH - 13, DIM, 1, 1);
@@ -2555,7 +2618,7 @@ function drawHud() {
   if (crew[1]) {
     // with two aboard, each flyer wears its number
     for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
-  } else if (G.t < 12) text('START 2: SE SUMA EL MONITO', CXS, BH - 34, DIM, 1, 1);
+  } else if (!talk[1] && G.t < 40) text('START 2: SE SUMA EL MONITO', CXS, BH - 34, DIM, 1, 1);
 
   // what is going on
   if (G.hacked) {
@@ -2577,6 +2640,13 @@ function drawHud() {
     : sat
       ? 'SATÉLITE HACKER EN LA ESTRATÓSFERA'
       : '';
+  if (talk[1]) {
+    // whoever is talking, and the line as far as it has been said
+    plate(46, BH - 72, 296, 50);
+    face(talk[0], 50, BH - 70, 2);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 104, BH - 68, GOLD);
+    text(talk[1].slice(0, talkT * 40), 104, BH - 57, INK);
+  }
   if (far) {
     plate(CXS - 116, BH - 18, 232, 14);
     text(far, CXS, BH - 14, INK, 1, 1);
