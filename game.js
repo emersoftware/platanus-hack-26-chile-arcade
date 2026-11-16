@@ -2667,7 +2667,7 @@ function drawHud() {
   labelN = 0;
   if (gMode !== PLAY) {
     plate(0, 84, BW, 76);
-    text(gMode === OVER ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 92, INK, 4, 1);
+    text(gMode === OVER ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 86, INK, 4, 1);
     if (gMode === OVER) text('PUNTAJE ' + gScore, CXS, 127, GOLD, 2, 1);
     else {
       text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 127, INK, 1, 1);
