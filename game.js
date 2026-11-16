@@ -40,31 +40,29 @@ const CABINET_KEYS = {
 
 // ───────────────────────────────────────────────────────────── tunables
 
-const P = {
-  // flight
-  speed: 31, // world units per second
-  boost: 1.8, // × speed while the thruster is held
-  turnRate: 1.25, // radians per second at full stick
-  bankAngle: 52, // degrees of bank in a full turn
-  climbRate: 22, // world units per second at full stick
-  invertY: false, // true: stick up dives (flight-stick style)
-  cruiseAlt: 22,
-  ceiling: 330, // the top of the stratosphere
-  rollTime: 0.8, // seconds for a barrel roll
-  rollSlide: 11, // how far a barrel roll carries the condor sideways
-  // model: small against the land, so the valley is wide and the cordillera towers
-  modelScale: 0.2, // world units per design unit
-  // camera
-  chaseY: 0.62, // where the condor sits on screen, top to bottom
-  chaseFollow: 7, // how quickly the camera swings round behind the condor …
-  chaseSlide: 5, // … and how quickly it catches up when the condor moves sideways
-  chaseDist: 2.6, // camera distance, in model lengths
-  chaseElev: 12, // camera height above the condor, degrees
-  chaseWidth: 0.27, // wingspan as a share of the screen
-  // world
-  seed: 3000,
-  clouds: 0.45,
-};
+// flight
+const SPEED = 31; // world units per second
+const BOOST = 1.8; // × speed while the thruster is held
+const TURN_RATE = 1.25; // radians per second at full stick
+const BANK_ANGLE = 52; // degrees of bank in a full turn
+const CLIMB_RATE = 22; // world units per second at full stick
+const INVERT_Y = false; // true: stick up dives (flight-stick style)
+const CRUISE_ALT = 22;
+const CEILING = 330; // the top of the stratosphere
+const ROLL_TIME = 0.8; // seconds for a barrel roll
+const ROLL_SLIDE = 11; // how far a barrel roll carries the condor sideways
+// model: small against the land, so the valley is wide and the cordillera towers
+const MODEL_SCALE = 0.2; // world units per design unit
+// camera
+const CHASE_Y = 0.62; // where the condor sits on screen, top to bottom
+const CHASE_FOLLOW = 7; // how quickly the camera swings round behind the condor …
+const CHASE_SLIDE = 5; // … and how quickly it catches up when the condor moves sideways
+const CHASE_DIST = 2.6; // camera distance, in model lengths
+const CHASE_ELEV = 12; // camera height above the condor, degrees
+const CHASE_WIDTH = 0.27; // wingspan as a share of the screen
+// world
+const SEED = 3000;
+const CLOUDS = 0.45;
 
 // ───────────────────────────────────────────────────────────── constants
 
@@ -515,7 +513,7 @@ function buildWorld(seed) {
 
   // Clouds: thin sheets of varying thickness, whiter the thicker they are, lit like the ground.
   const puff = fbm(64, 4, rnd);
-  const cover = clamp(P.clouds * 0.36, 0, 0.9);
+  const cover = clamp(CLOUDS * 0.36, 0, 0.9);
   const thr = levelFor(puff, 1 - cover);
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
@@ -1052,7 +1050,7 @@ function resetFlight() {
   sq.yaw = cam.yaw = 0.12;
   cam.x = sq.x;
   cam.y = sq.y;
-  lead.z = P.cruiseAlt;
+  lead.z = CRUISE_ALT;
   lead.trailLen = 0;
   puffs.fill(0);
 }
@@ -1108,7 +1106,7 @@ function axesOf(f) {
 // A point on the model (in design units from the pivot) → the world.
 function modelPoint(f, ma, mb, mc, out, o) {
   const a = f.ax;
-  const s = P.modelScale;
+  const s = MODEL_SCALE;
   out[o] = f.x + s * (ma * a[0] + mb * a[3] + mc * a[6]);
   out[o + 1] = f.y + s * (ma * a[1] + mb * a[4] + mc * a[7]);
   out[o + 2] = f.z + s * (ma * a[2] + mb * a[5] + mc * a[8]);
@@ -1275,7 +1273,7 @@ function simulate(dt) {
     const rawX = (held[k + 'R'] ? 1 : 0) - (held[k + 'L'] ? 1 : 0);
     const rawY = (held[k + 'U'] ? 1 : 0) - (held[k + 'D'] ? 1 : 0);
     let turn = rawX;
-    let lift = P.invertY ? -rawY : rawY;
+    let lift = INVERT_Y ? -rawY : rawY;
     if (!play) {
       turn = Math.sin(now * 0.23) * 0.45; // out of play, it wanders by itself
       lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + 16 - f.z) / 6, -1, 1);
@@ -1315,12 +1313,12 @@ function simulate(dt) {
     if (f.dash > 0) burn = 1.9;
     f.thr += (burn - f.thr) * (1 - Math.exp((f.dash > 0 ? -16 : -4) * dt));
     const push = Math.max(0, (f.thr - 0.3) / 0.7);
-    const fast = 1 + (P.boost - 1) * push;
+    const fast = 1 + (BOOST - 1) * push;
     f.inv -= dt;
-    f.bank = (f.turn * P.bankAngle * Math.PI) / 180;
-    f.pitch = Math.atan2(f.lift * P.climbRate, P.speed);
+    f.bank = (f.turn * BANK_ANGLE * Math.PI) / 180;
+    f.pitch = Math.atan2(f.lift * CLIMB_RATE, SPEED);
     f.kick *= Math.exp(-4 * dt);
-    f.z = Math.min(P.ceiling, f.z + (f.lift * P.climbRate * fast * (f.lift < 0 && f.agl < 4 ? Math.max(0.35, (f.agl - 1) / 3) : 1) + f.kick) * dt);
+    f.z = Math.min(CEILING, f.z + (f.lift * CLIMB_RATE * fast * (f.lift < 0 && f.agl < 4 ? Math.max(0.35, (f.agl - 1) / 3) : 1) + f.kick) * dt);
     if (duo) f.s += f.turn * 26 * dt;
 
     // barrel rolls: one full turn about the nose, left or right, sliding it that way. While
@@ -1332,10 +1330,10 @@ function simulate(dt) {
     }
     if (f.rollT > 0) {
       const was = f.rollT;
-      f.rollT = Math.max(0, was - dt / P.rollTime);
+      f.rollT = Math.max(0, was - dt / ROLL_TIME);
       f.roll = f.rollDir * TAU * ease(1 - f.rollT);
       // the slide is quickest half-way through the roll
-      const slide = (f.rollDir * P.rollSlide * (Math.cos(Math.PI * f.rollT) - Math.cos(Math.PI * was))) / 2;
+      const slide = (f.rollDir * ROLL_SLIDE * (Math.cos(Math.PI * f.rollT) - Math.cos(Math.PI * was))) / 2;
       if (duo) f.s += slide;
       else {
         sq.x += rx * slide;
@@ -1361,8 +1359,8 @@ function simulate(dt) {
   }
 
   // ── the squad flies on
-  const spd = P.speed * (1 + (P.boost - 1) * pushes);
-  sq.yaw += turns * P.turnRate * (duo ? 0.8 : 1) * dt;
+  const spd = SPEED * (1 + (BOOST - 1) * pushes);
+  sq.yaw += turns * TURN_RATE * (duo ? 0.8 : 1) * dt;
   sq.x += sx * spd * dt;
   sq.y += sy * spd * dt;
 
@@ -1752,14 +1750,14 @@ function simulate(dt) {
 
   // ── the camera: behind the squad and a little above, swinging round after it in a turn
   // and trailing it for a moment when it slides sideways
-  cam.S = (P.chaseWidth * BW) / (MW * P.modelScale) / (duo ? 1.25 : 1); // with two, it stands further off
-  cam.q = 1 / (P.chaseDist * (1 + 0.16 * pushes) * ML * P.modelScale); // it drops back as the squad surges ahead
-  cam.k = Math.tan((P.chaseElev * Math.PI) / 180);
-  cam.cy = BH * P.chaseY + spread() * G.shake * 6;
-  cam.yaw += wrapAngle(sq.yaw - cam.yaw) * (1 - Math.exp(-P.chaseFollow * dt));
+  cam.S = (CHASE_WIDTH * BW) / (MW * MODEL_SCALE) / (duo ? 1.25 : 1); // with two, it stands further off
+  cam.q = 1 / (CHASE_DIST * (1 + 0.16 * pushes) * ML * MODEL_SCALE); // it drops back as the squad surges ahead
+  cam.k = Math.tan((CHASE_ELEV * Math.PI) / 180);
+  cam.cy = BH * CHASE_Y + spread() * G.shake * 6;
+  cam.yaw += wrapAngle(sq.yaw - cam.yaw) * (1 - Math.exp(-CHASE_FOLLOW * dt));
   const cx = Math.cos(cam.yaw);
   const cy = Math.sin(cam.yaw);
-  const aside = ((sq.x - cam.x) * cx + (sq.y - cam.y) * cy) * Math.exp(-P.chaseSlide * dt);
+  const aside = ((sq.x - cam.x) * cx + (sq.y - cam.y) * cy) * Math.exp(-CHASE_SLIDE * dt);
   cam.x = sq.x - cx * aside;
   cam.y = sq.y - cy * aside;
   cam.zr = sq.z;
@@ -2170,7 +2168,7 @@ function castShadows(f, lx, ly, lz) {
 
 function drawFlyer(f) {
   if (!project(f.x, f.y, f.z)) return;
-  const s = prM * P.modelScale;
+  const s = prM * MODEL_SCALE;
   const reach = s * 34;
   if (prX < -reach || prX > BW + reach || prY < -reach || prY > BH + reach) return;
   fx0 = prX;
@@ -2184,7 +2182,7 @@ function drawFlyer(f) {
     const dep = a[i] * fwdX + a[i + 1] * fwdY;
     STEP[i] = s * (a[i] * rgtX + a[i + 1] * rgtY);
     STEP[i + 1] = -s * (a[i + 2] + cam.k * dep);
-    STEP[i + 2] = P.modelScale * dep;
+    STEP[i + 2] = MODEL_SCALE * dep;
   }
 
   // the sun, and the direction half-way between the sun and the camera, in the flyer's own
@@ -2705,7 +2703,7 @@ function drawHud() {
 
   // height: the ground below (rising from the foot of the scale) and the condor above it
   const foot = BH - 10;
-  const rung = (z) => foot - Math.sqrt(clamp(z, 0, P.ceiling) / P.ceiling) * 44;
+  const rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * 44;
   plate(4, BH - 80, 36, 76);
   text('ALT', 8, BH - 76, DIM);
   text((G.agl * 10) | 0, 8, BH - 66, INK);
@@ -2770,7 +2768,7 @@ function drawFrame() {
   fwdY = -Math.cos(cam.yaw);
   rgtX = -fwdY;
   rgtY = fwdX;
-  invMs = 1 / P.modelScale;
+  invMs = 1 / MODEL_SCALE;
   sunR = LIGHT[0] * rgtX + LIGHT[1] * rgtY;
   sunU = LIGHT[2];
   sunC = -(LIGHT[0] * fwdX + LIGHT[1] * fwdY);
@@ -2847,7 +2845,7 @@ function create() {
   buildModel(1);
   lead.m = MODELS[0];
   mate.m = MODELS[1];
-  buildWorld(P.seed);
+  buildWorld(SEED);
   resetFlight();
 }
 
