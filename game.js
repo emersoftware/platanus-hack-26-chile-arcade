@@ -57,7 +57,7 @@ const ROLL_SLIDE = 11; // how far a barrel roll carries the condor sideways
 // model: small against the land, so the valley is wide and the cordillera towers
 const MODEL_SCALE = 0.2; // world units per design unit
 // camera
-const CHASE_Y = 0.56; // where the condor sits on screen, top to bottom
+const CHASE_Y = 0.6; // where the condor sits on screen, top to bottom
 const CHASE_FOLLOW = 7; // how quickly the camera swings round behind the condor …
 const CHASE_SLIDE = 5; // … and how quickly it catches up when the condor moves sideways
 const CHASE_DIST = 2.6; // camera distance, in model lengths
@@ -2518,17 +2518,17 @@ function glitch(amount) {
 
 // ── the panel: lettering, gauges, radar and markers, drawn straight into the picture
 
-// ── the console: the picture is a monitor between two black decks of instruments
+// ── the instruments: laid straight over the picture, with no panels behind them. Lettering
+// and gauges carry a dark edge instead, so they read over sky, snow and grass alike
 
 const INK = pack(240, 246, 255);
-const DIM = pack(130, 168, 198);
+const DIM = pack(176, 208, 232);
 const GOLD = pack(255, 214, 90);
 const WATER = pack(110, 180, 230);
-const BLACK = pack(5, 8, 12);
-const LINE = pack(60, 100, 138); // rules, rings and the frames of things
-const OFF = pack(24, 38, 54); // a lamp that is not lit
-const TOP = 36; // where the upper deck ends …
-const VB = BH - 52; // … and where the lower one begins
+const EDGE = pack(12, 22, 38); // the dark edge (the lettering's is the same colour)
+const OFF = pack(44, 62, 84); // a lamp that is not lit
+const TOP = 16; // marks keep this far from the top of the screen …
+const VB = BH - 16; // … and stop here at the foot
 
 function box(x, y, w, h, colour) {
   const x0 = Math.max(0, x | 0);
@@ -2556,7 +2556,7 @@ function text(str, x, y, colour, size, align) {
   str = String(str);
   size = SIZES[size || 1];
   if (t.text !== str) t.setText(str);
-  if (t.size !== size) t.setFontSize((t.size = size));
+  if (t.size !== size) t.setFontSize((t.size = size)).setStroke('#0c1626', 2.5 + size / 12);
   if (t.ink !== colour) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
@@ -2583,27 +2583,17 @@ function face(who, x, y, size, flip) {
   }
 }
 
-// A black panel, ruled off above and below.
-function plate(x, y, w, h) {
-  box(x, y, w, h, BLACK);
-  box(x, y, w, 1, LINE);
-  box(x, y + h - 1, w, 1, LINE);
-}
-
-// A gauge: a row of lamps, lit up to `share` of the way along.
+// A gauge: a row of lamps, lit up to `share` of the way along, in a dark frame.
 function gauge(x, y, w, share, colour, h) {
   const n = (w / 6) | 0;
+  box(x - 1, y - 1, n * 6 + 1, (h || 5) + 2, EDGE);
   for (let i = 0; i < n; i++) box(x + i * 6, y, 5, h || 5, i < share * n ? colour : OFF);
 }
 
-// A name plate: what a mark is, and what to do about it, underlined in the mark's colour.
+// A name beside a mark: what it is, and what to do about it.
 function tag(str, x, y, colour) {
   const w = str.length * 4.8 + 6;
-  x = clamp(x, w / 2 + 2, BW - w / 2 - 2);
-  y = clamp(y, TOP + 2, VB - 13);
-  box(x - w / 2, y, w, 10, BLACK);
-  box(x - w / 2, y + 10, w, 1, colour);
-  text(str, x, y, colour, 1, 1);
+  text(str, clamp(x, w / 2 + 2, BW - w / 2 - 2), clamp(y, TOP + 2, VB - 13), colour, 1, 1);
 }
 
 // A mark for something the pilot cannot see: an arrowhead at the edge of the screen when it is
@@ -2638,9 +2628,13 @@ function mark(x, y, z, colour, label, always) {
   const k = side ? (CXS - 9) / Math.abs(ex) : half / Math.abs(ey);
   const px = CXS + ex * k;
   const py = mid + ey * k;
-  for (let i = 0; i < 6; i++) {
-    if (side) box(px - Math.sign(ex) * i, py - i, 1, 2 * i + 1, colour);
-    else box(px - i, py - Math.sign(ey) * i, 2 * i + 1, 1, colour);
+  for (let i = -1; i < 14; i++) {
+    // the arrowhead, twice: a dark one a size larger, then the coloured one inside it
+    const n = i < 8 ? i : i - 8;
+    const c = i < 8 ? EDGE : colour;
+    const o = i < 8 ? -1 : 0;
+    if (side) box(px - Math.sign(ex) * (n + o), py - n, 1, 2 * n + 1, c);
+    else box(px - n, py - Math.sign(ey) * (n + o), 2 * n + 1, 1, c);
   }
   if (side) tag(label, px - Math.sign(ex) * (label.length * 2.4 + 12), py - 5, colour);
   else tag(label, px, py - Math.sign(ey) * 13 - 5, colour);
@@ -2648,12 +2642,10 @@ function mark(x, y, z, colour, label, always) {
 
 // The radar: what is around the crew, nose up, under a sweeping hand.
 function radar(cx, cy, R) {
-  for (let y = -R; y <= R; y++) {
-    const w = Math.round(Math.sqrt(R * R - y * y));
-    box(cx - w, cy + y, 2 * w, 1, LINE);
-    box(cx - w + 1, cy + y, 2 * w - 2, 1, y ? OFF : LINE);
+  for (let a = 0; a < TAU; a += 0.02) {
+    // a ring, dark outside and pale inside, with nothing behind it
+    for (let i = 0; i < 3; i++) box(cx + Math.sin(a) * (R + 1 - i), cy + Math.cos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
   }
-  box(cx, cy - R, 1, 2 * R, LINE);
   for (let i = 0; i < R; i++) box(cx + Math.sin(now * 3) * i, cy - Math.cos(now * 3) * i, 1, 1, DIM);
   const sx = Math.sin(sq.yaw);
   const sy = -Math.cos(sq.yaw);
@@ -2682,39 +2674,37 @@ function drawHud() {
   for (const t of LABELS) t.setVisible(false);
   labelN = 0;
   const blink = (now * 2) & 1;
-  plate(0, 0, BW, TOP);
-  plate(0, VB, BW, BH - VB);
   if (gMode !== PLAY) {
     const over = gMode === OVER;
-    text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 6, INK, 1, 1);
-    text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 19, DIM, 1, 1);
-    plate(0, 74, BW, 62);
-    text(over ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 78, INK, 4, 1);
-    if (over) text('PUNTAJE ' + gScore + ' · RÉCORD ' + gBest, CXS, 116, GOLD, 2, 1);
-    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 116, GOLD, 2, 1);
-    face(0, 4, VB + 2, 2);
-    face(1, BW - 60, VB + 2, 2, 1);
-    text('DARWIN', 64, VB + 3, GOLD);
-    text('MONITO', BW - 64, VB + 3, GOLD, 1, 2);
-    text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL', CXS, VB + 15, INK, 1, 1);
-    text('B4 IMPULSO · B5 AGUA · VUELA BAJO Y RESCATA', CXS, VB + 26, DIM, 1, 1);
-    if (!over) text('RÉCORD ' + gBest, CXS, VB + 38, DIM, 1, 1);
-    else if (blink) text('START PARA VOLAR DE NUEVO', CXS, VB + 38, GOLD, 1, 1);
+    text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 8, INK, 1, 1);
+    text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
+    text(over ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 62, INK, 4, 1);
+    if (over) text('PUNTAJE ' + gScore + ' · RÉCORD ' + gBest, CXS, 104, GOLD, 2, 1);
+    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 104, GOLD, 2, 1);
+    face(0, 6, BH - 54, 2);
+    face(1, BW - 62, BH - 54, 2, 1);
+    text('DARWIN', 66, BH - 52, GOLD);
+    text('MONITO', BW - 66, BH - 52, GOLD, 1, 2);
+    text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL', CXS, BH - 40, INK, 1, 1);
+    text('B4 IMPULSO · B5 AGUA · VUELA BAJO Y RESCATA', CXS, BH - 28, DIM, 1, 1);
+    if (!over) text('RÉCORD ' + gBest, CXS, BH - 16, DIM, 1, 1);
+    else if (blink) text('START PARA VOLAR DE NUEVO', CXS, BH - 16, GOLD, 1, 1);
     return;
   }
 
   const goal = folk[0] || fires[0];
-  for (const x of [119, 281]) box(x, 4, 1, TOP - 9, LINE);
-  for (const x of [60, 339]) box(x, VB + 4, 1, BH - VB - 8, LINE);
 
-  // upper deck, left: score, the multiplier, and how long the crew has kept low
-  text('PUNTAJE', 4, 3, DIM);
-  if (gAgl < 8) text('VUELO BAJO', 114, 3, GOLD, 1, 2);
-  text(String(gScore).padStart(6, '0'), 4, 15, INK, 2);
-  text('×' + gMult, 114, 15, gMult > 1 ? GOLD : DIM, 2, 2);
-  box(4, 31, (gLow / 10) * 110, 2, GOLD);
+  // top left: score, the multiplier, and how long the crew has kept low
+  text('PUNTAJE', 6, 5, DIM);
+  if (gAgl < 8) text('VUELO BAJO', 116, 5, GOLD, 1, 2);
+  text(String(gScore).padStart(6, '0'), 6, 16, INK, 2);
+  text('×' + gMult, 116, 16, gMult > 1 ? GOLD : DIM, 2, 2);
+  if (gLow > 0.1) {
+    box(5, 32, (gLow / 10) * 110 + 2, 4, EDGE);
+    box(6, 33, (gLow / 10) * 110, 2, GOLD);
+  }
 
-  // middle: the job in hand, and how it is done
+  // top middle: the job in hand, and how it is done
   const duty = folk[0]
     ? [`ALUVIÓN · ${folk.length} POR RESCATAR`, 'PASA BAJITO SOBRE CADA BALIZA']
     : goal
@@ -2722,71 +2712,65 @@ function drawHud() {
       : sat
         ? ['SATÉLITE HACKER', 'SUBE A LA ESTRATÓSFERA Y DISPARA']
         : ['PATRULLA', 'DERRIBA DRONES · VUELA BAJO'];
-  if (goal || sat) for (const x of [124, 272]) box(x, 8, 4, 4, blink ? GOLD : OFF); // lamps: something is up
-  text(duty[0], CXS, 6, GOLD, 1, 1);
-  text(duty[1], CXS, 19, INK, 1, 1);
+  text(duty[0], CXS, 5, goal || sat ? (blink ? GOLD : INK) : GOLD, 1, 1);
+  text(duty[1], CXS, 17, INK, 1, 1);
 
-  // right: shield, boost (a row each with two aboard) and water
-  text('ESCUDO', 286, 3, DIM);
-  gauge(326, 4, 66, gShield / 100, gShield < 30 ? colRed : INK);
-  text('IMPULSO', 286, 14, DIM);
-  crew.forEach((f, i) => gauge(326, 15 + i * 3, 66, f.stam / 100, i ? GOLD : INK, crew[1] ? 2 : 5));
-  text('AGUA', 286, 25, DIM);
-  for (let i = 0; i < 3; i++) box(326 + i * 22, 26, 21, 5, i < gWater ? WATER : OFF);
+  // top right: shield, boost (a row each with two aboard) and water
+  text('ESCUDO', 288, 5, DIM);
+  gauge(328, 7, 66, gShield / 100, gShield < 30 ? colRed : INK);
+  text('IMPULSO', 288, 16, DIM);
+  crew.forEach((f, i) => gauge(328, 18 + i * 4, 66, f.stam / 100, i ? GOLD : INK, crew[1] ? 2 : 5));
+  text('AGUA', 288, 27, DIM);
+  box(327, 28, 67, 7, EDGE);
+  for (let i = 0; i < 3; i++) box(328 + i * 22, 29, 21, 5, i < gWater ? WATER : OFF);
 
-  // lower deck, left: height — the ground rising from the foot of the scale, the cloud base
-  // and the stratosphere ruled across it, and the crew
-  const foot = BH - 5;
+  // bottom left: height — the ground rising from the foot of the scale, the cloud base and
+  // the stratosphere ruled across it, and the crew
+  const foot = BH - 6;
   const rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * 42;
-  box(5, foot - 42, 4, 42, OFF);
-  box(5, rung(gGnd), 4, foot - rung(gGnd), LINE);
-  box(3, rung(CA), 8, 1, DIM);
-  box(3, rung(STRATO), 8, 1, DIM);
-  crew.forEach((f, i) => box(2, rung(f.z) - 1, 10, 2, i ? GOLD : INK));
-  text('ALTURA', 16, VB + 4, DIM);
-  text((gAgl * 10) | 0, 16, VB + 14, INK, 2);
-  text('METROS', 16, VB + 34, DIM);
+  box(5, foot - 43, 6, 44, EDGE);
+  box(6, foot - 42, 4, 42, OFF);
+  box(6, rung(gGnd), 4, foot - rung(gGnd), DIM);
+  box(4, rung(CA), 8, 1, INK);
+  box(4, rung(STRATO), 8, 1, INK);
+  crew.forEach((f, i) => box(3, rung(f.z) - 1, 10, 2, i ? GOLD : INK));
+  text('ALTURA', 18, BH - 47, DIM);
+  text((gAgl * 10) | 0, 18, BH - 37, INK, 2);
+  text('METROS', 18, BH - 17, DIM);
 
-  // middle: the radio — whoever is talking and the line as far as it has been said — or, with
-  // the radio quiet, what the buttons do
+  // bottom middle: the radio — whoever is talking and the line as far as it has been said —
+  // or, with the radio quiet, what the buttons do
   if (talk[1]) {
-    face(talk[0], 64, VB + 2, 2);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 126, VB + 3, GOLD);
-    text(talk[1].slice(0, talkT * 40), 126, VB + 18, INK);
+    face(talk[0], 66, BH - 54, 2);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 52, GOLD);
+    text(talk[1].slice(0, talkT * 40), 128, BH - 38, INK);
   } else {
-    text('B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, VB + 12, DIM, 1, 1);
-    if (!crew[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, VB + 28, GOLD, 1, 1);
+    if (!crew[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 29, GOLD, 1, 1);
+    text('B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 16, DIM, 1, 1);
   }
-  radar(370, VB + 26, 23);
+  radar(BW - 30, BH - 30, 24);
 
   if (gShield < 30 && (now * 4) & 1) {
-    // little shield left: the monitor's frame flashes
-    box(0, TOP, BW, 2, colRed);
-    box(0, VB - 2, BW, 2, colRed);
-    box(0, TOP, 2, VB - TOP, colRed);
-    box(BW - 2, TOP, 2, VB - TOP, colRed);
+    // little shield left: the frame flashes
+    box(0, 0, BW, 2, colRed);
+    box(0, BH - 2, BW, 2, colRed);
+    box(0, 0, 2, BH, colRed);
+    box(BW - 2, 0, 2, BH, colRed);
   }
   // with two aboard, each flyer wears its number
-  if (crew[1]) for (const f of crew) if (project(f.x, f.y, f.z + 2.4) && prY > TOP + 12 && prY < VB) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
+  if (crew[1]) for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
 
-  // what is going on, across the top of the monitor
+  // what is going on, across the top of the picture
   if (gHacked) {
-    plate(CXS - 100, 46, 200, 54);
-    text('¡HACKEADO!', CXS, 51, colRed, 3, 1);
-    text('AGITA LA PALANCA Y MACHACA B1', CXS, 76, INK, 1, 1);
-    gauge(CXS - 78, 89, 156, gPurge, INK);
+    text('¡HACKEADO!', CXS, 48, colRed, 3, 1);
+    text('AGITA LA PALANCA Y MACHACA B1', CXS, 74, INK, 1, 1);
+    gauge(CXS - 78, 88, 156, gPurge, INK);
   } else if (gChan > 0) {
-    plate(CXS - 150, 46, 300, 31);
-    text('HACKEO ENTRANTE: TONEL O DISPARA', CXS, 50, colRed, 2, 1);
-    gauge(CXS - 78, 67, 156, gChan, colRed);
-  } else if (gMsgT > 0) {
-    const size = gMsg.length > 30 ? 1 : 2;
-    const w = gMsg.length * (size > 1 ? 8.4 : 4.8) + 14;
-    plate(CXS - w / 2, 46, w, 8 + size * 8);
-    text(gMsg, CXS, 50, INK, size, 1);
-  }
+    text('HACKEO ENTRANTE: TONEL O DISPARA', CXS, 48, colRed, 2, 1);
+    gauge(CXS - 78, 66, 156, gChan, colRed);
+  } else if (gMsgT > 0) text(gMsg, CXS, 48, INK, gMsg.length > 30 ? 1 : 2, 1);
 
-  // marks, over the monitor: what cannot be seen and where to go, each with what to do
+  // marks: what cannot be seen and where to go, each with what to do
   for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : 'DRON');
   for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed, 'LÁSER: TONEL');
   if (sat) mark(sat.x, sat.y, sat.z, INK, 'SATÉLITE: SUBE', 1);
