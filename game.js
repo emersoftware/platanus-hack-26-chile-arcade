@@ -505,6 +505,54 @@ function buildWorld(seed) {
       CTONE[i] = clamp(Math.round(62 + E[i] * 3 + (lightOn(gx, gy) - 0.74) * 22), CLOUD_LOW + 2, WHITE);
     }
   }
+  buildTowns(seed);
+}
+
+// Small towns, alternately in the valley and behind the beach: pale streets on the ground and
+// a huddle of low buildings (each: x, y, ground, height, half-width, tone).
+const TOWNS = [];
+function buildTowns(seed) {
+  TOWNS.length = 0;
+  for (let k = 0; k < 6; k++) {
+    let cx = 0;
+    let cy = 0;
+    for (let tries = 0; tries < 60; tries++) {
+      // somewhere green and level, off the rivers
+      const r = hash2(k, tries, seed);
+      cx = N * (k & 1 ? COAST + 0.03 + (r % 100) / 4000 : 0.32 + (r % 100) / 800);
+      cy = ((k + 0.5) * N) / 6 + ((r >>> 8) % 70) - 35;
+      const g = GR[cell(cx, cy)] / GS;
+      if (g > 23 && g < 32 && Math.abs(groundAt(cx + 7, cy) - groundAt(cx - 7, cy)) < 2.5) break;
+    }
+    const b = [];
+    for (let gy = -4; gy <= 4; gy++) {
+      for (let gx = -4; gx <= 4; gx++) {
+        const r = hash2(gx + k * 32, gy, seed + 5);
+        const d = Math.hypot(gx, gy);
+        const i = cell(cx + gx * 2.7, cy + gy * 2.7);
+        if (d < 4.4 + (r & 3) * 0.2 && GR[i] > G_SAND * GS) {
+          for (let n = 0; n < 9; n++) GR[cell(cx + gx * 2.7 + (n % 3) - 1, cy + gy * 2.7 + ((n / 3) | 0) - 1)] = (G_SAND + 1) * GS;
+        }
+        if (d > 3.5 || r % 4 === 0) continue;
+        const x = cx + gx * 2.7 + ((r >>> 4) % 10) / 12;
+        const y = cy + gy * 2.7 + ((r >>> 20) % 10) / 12;
+        b.push(x, y, groundAt(x, y), 1.2 + ((r >>> 8) % 3) * 0.7 + (d < 1.5 ? 1.6 : 0), 0.65 + ((r >>> 12) % 3) * 0.15, (r >>> 16) % 3);
+      }
+    }
+    TOWNS.push({ x: cx, y: cy, b });
+  }
+}
+
+// A power line runs the length of the valley: a pylon every PYLON units, cables sagging between.
+const PYLON = 32;
+const PYLON_H = 10;
+const ARM = 1.2; // how far below a pylon's top the cables hang from …
+const SAG = 1.8; // … and how much lower they are at mid-span
+function lineX(y) {
+  return N * (0.44 + 0.028 * Math.sin((y / N) * TAU * 2) + 0.012 * Math.sin((y / N) * TAU * 5 + 1));
+}
+function pylonTop(j) {
+  return groundAt(lineX(j * PYLON + 16), j * PYLON + 16) + PYLON_H;
 }
 
 function groundAt(x, y) {
@@ -744,6 +792,7 @@ const G = {
   immune: 0,
   dirX: 0,
   dirY: 0,
+  side: 0, // which side of the power line the condor was on
   lock: null, // what the guns are tracking
   spawnT: 0,
   hackT: 0,
@@ -879,7 +928,7 @@ function resetFlight() {
 }
 
 function startGame() {
-  Object.assign(G, { mode: PLAY, t: 0, score: 0, mult: 1, low: 0, shield: 100, inv: 2, kick: 0, water: 0, hacked: 0, purge: 0, chan: 0, immune: 0, spawnT: 4, hackT: 20, fenceT: 9, emT: 10, emN: 0, satT: 14, flash: 0 });
+  Object.assign(G, { mode: PLAY, t: 0, score: 0, mult: 1, low: 0, shield: 100, inv: 2, kick: 0, water: 0, hacked: 0, purge: 0, chan: 0, immune: 0, spawnT: 4, hackT: 20, fenceT: 9, emT: 10, emN: 0, satT: 14, flash: 0, side: 0 });
   drones.length = shots.length = fires.length = folk.length = fences.length = 0;
   sat = em = null;
   lead.z = Math.max(lead.z, groundAt(lead.x, lead.y) + 20);
@@ -1303,6 +1352,30 @@ function simulate(dt) {
       }
       f.was = along;
       if (along > 30 || along < -250) fences.splice(i, 1);
+    }
+
+    // ── the power line: the cables and the pylons are solid; slipping under the cables pays
+    const off = lead.x - lineX(lead.y);
+    const span = (lead.y - 16) / PYLON;
+    const j = Math.floor(span);
+    const fr = span - j;
+    const wire = pylonTop(j) + (pylonTop(j + 1) - pylonTop(j)) * fr - ARM - SAG * 2 * Math.min(fr, 1 - fr);
+    if (Math.abs(off) < 3.4 && Math.abs(lead.z - wire) < 0.9) hurt(18, '¡CABLES!');
+    else if (Math.abs(off) < 1.6 && (fr < 0.06 || fr > 0.94) && lead.z < wire + ARM) hurt(25, '¡TORRE!');
+    else if (off * G.side < 0 && Math.abs(off) < 3 && lead.z < wire) gain(120, 'BAJO LOS CABLES');
+    G.side = off;
+
+    // ── buildings are solid too
+    for (const t of TOWNS) {
+      const dy = lead.y - t.y - Math.round((lead.y - t.y) / N) * N; // the town's nearest self, north or south
+      if (Math.abs(lead.x - t.x) + Math.abs(dy) > 26) continue;
+      for (let o = 0; o < t.b.length; o += 6) {
+        const w = t.b[o + 4] + 0.8;
+        if (Math.abs(lead.x - t.b[o]) < w && Math.abs(dy - t.b[o + 1] + t.y) < w && lead.z < t.b[o + 2] + t.b[o + 3] + 0.3) {
+          hurt(25, '¡EDIFICIO!');
+          G.kick = 24;
+        }
+      }
     }
 
     // ── water: skim the sea or a river to take it on, B5 to let a load go
@@ -2034,6 +2107,33 @@ function beam(x1, y1, z1, x2, y2, z2, w, colour, alpha) {
   }
 }
 
+// An upright block — a building — seen face on: lit on the sun's side, shaded on the other,
+// with a dark line for its roof.
+const WALLS = [
+  [pack(238, 236, 228), pack(158, 166, 186)],
+  [pack(216, 206, 184), pack(140, 138, 146)],
+  [pack(176, 196, 216), pack(104, 124, 152)],
+];
+const colRoof = pack(74, 86, 110);
+function slab(x, y, z, h, w, tone) {
+  if (!project(x, y, z)) return;
+  const hw = Math.max(0.6, w * prM);
+  const x0 = Math.max(0, Math.round(prX - hw));
+  const x1 = Math.min(BW, Math.round(prX + hw));
+  const y0 = Math.max(0, Math.round(prY - h * prM));
+  const y1 = Math.min(BH, Math.round(prY));
+  const edge = prX + (sunR < 0 ? 0.25 : -0.25) * hw; // where the lit side meets the shaded one
+  for (let py = y0; py < y1; py++) {
+    for (let px = x0, p = py * BW + x0; px < x1; px++, p++) {
+      if (ZB[p] <= prV) continue;
+      ZB[p] = prV;
+      FB[p] = py === y0 ? colRoof : WALLS[tone][px < edge === sunR < 0 ? 0 : 1];
+    }
+  }
+}
+
+const colSteel = pack(72, 86, 108);
+const colCable = pack(44, 54, 72);
 const colRed = pack(255, 40, 70);
 const colShot = pack(200, 235, 255);
 const colFire = pack(255, 160, 60);
@@ -2090,6 +2190,31 @@ function drawThings() {
     for (let i = 0; i < 4; i++) {
       const z = f.z0 + ((f.z1 - f.z0) * i) / 3;
       beam(f.x - px, f.y - py, z, f.x + px, f.y + py, z, 0.3, colRed, 150 + ((Math.sin(now * 30 + i) * 80) | 0));
+    }
+  }
+  // towns close enough to make out
+  for (const t of TOWNS) {
+    const ty = t.y + Math.round((lead.y - t.y) / N) * N - t.y; // shift to its nearest self, north or south
+    if (Math.abs(lead.x - t.x) + Math.abs(lead.y - t.y - ty) > 320) continue;
+    for (let o = 0; o < t.b.length; o += 6) slab(t.b[o], t.b[o + 1] + ty, t.b[o + 2], t.b[o + 3], t.b[o + 4], t.b[o + 5]);
+  }
+  // the power line: each pylon is two legs and a crossarm, with a cable from each end of the
+  // arm sagging to the next pylon
+  const j0 = Math.floor(lead.y / PYLON);
+  for (let j = j0 - 7; j <= j0 + 7; j++) {
+    const y = j * PYLON + 16;
+    const x = lineX(y);
+    const top = pylonTop(j);
+    const x2 = lineX(y + PYLON);
+    const top2 = pylonTop(j + 1);
+    beam(x - 1.3, y, top - PYLON_H, x, y, top, 0.3, colSteel, 255);
+    beam(x + 1.3, y, top - PYLON_H, x, y, top, 0.3, colSteel, 255);
+    beam(x - 2.6, y, top - ARM, x + 2.6, y, top - ARM, 0.3, colSteel, 255);
+    for (let side = -2.6; side < 3; side += 5.2) {
+      const mx = (x + x2) / 2 + side;
+      const mz = (top + top2) / 2 - ARM - SAG;
+      beam(x + side, y, top - ARM, mx, y + PYLON / 2, mz, 0.1, colCable, 255);
+      beam(mx, y + PYLON / 2, mz, x2 + side, y + PYLON, top2 - ARM, 0.1, colCable, 255);
     }
   }
   for (const s of shots) {
