@@ -1,4 +1,4 @@
-// CÓNDOR 3000
+// DARWIN 3000
 //
 // A small software renderer shown through Phaser 3. Everything is drawn into one low-resolution
 // pixel buffer and scaled up with hard pixels:
@@ -301,7 +301,7 @@ const GPAL = new Uint32Array((FOG_N + 1) * NG * NL); // [haze step][gradient pla
 
 // What the flyer is made of. Each material runs from its colour in shadow to its colour in
 // full sun (NLIT steps), then on towards white where it glints.
-const NAVY = 1;
+const BODY = 1;
 const PLUME = 2;
 const HEAD = 3;
 const GLASS = 4;
@@ -318,12 +318,32 @@ const MATERIALS = [
   [255, 150, 50, 255, 170, 60],
   [58, 44, 34, 150, 122, 92],
 ];
+const NMAT = MATERIALS.length;
+// The flyers' own colours for body, markings, nose, eyes and engines: Darwin's frog is leaf
+// green with a brown snout and golden eyes; the monito is grey-brown and cream, with a pink
+// nose and black eyes.
+const SKINS = [
+  [
+    [16, 50, 28, 104, 196, 86],
+    [118, 128, 84, 240, 244, 186],
+    [78, 42, 24, 196, 124, 70],
+    [30, 22, 8, 236, 186, 60],
+    [8, 14, 12, 52, 70, 56],
+  ],
+  [
+    [52, 42, 38, 182, 160, 138],
+    [132, 120, 110, 252, 246, 234],
+    [150, 64, 88, 255, 156, 176],
+    [4, 4, 8, 60, 60, 80],
+    [10, 10, 14, 64, 60, 66],
+  ],
+];
 const FIRE = 7;
 const MUD = 8;
-const GLINT = [0, 4, 5, 6, 12, 3, 0, 0, 1]; // how strongly each catches a highlight
+const GLINT = [0, 4, 5, 6, 14, 3, 0, 0, 1]; // how strongly each catches a highlight
 const NLIT = 16;
 const NLV = 24;
-const JPAL = new Uint32Array(MATERIALS.length * NLV);
+const JPAL = new Uint32Array(3 * NMAT * NLV); // [the things' colours · the frog's · the monito's][material][light]
 const colOutline = pack(RAMP[0][0], RAMP[0][1], RAMP[0][2]);
 const colTrail = pack(255, 255, 255);
 const colSmoke = pack(RAMP[47][0], RAMP[47][1], RAMP[47][2]);
@@ -362,8 +382,9 @@ function buildPalettes() {
       }
     }
   }
-  for (let m = 0; m < MATERIALS.length; m++) {
-    const c = MATERIALS[m];
+  for (let m = 0; m < 3 * NMAT; m++) {
+    const skin = SKINS[((m / NMAT) | 0) - 1];
+    const c = (skin && skin[(m % NMAT) - 1]) || MATERIALS[m % NMAT];
     for (let l = 0; l < NLV; l++) {
       const t = Math.min(1, l / (NLIT - 1));
       const up = l < NLIT ? 0 : ((l - NLIT + 1) / (NLV - NLIT)) * 0.75; // towards white
@@ -560,11 +581,14 @@ function groundAt(x, y) {
 
 // ───────────────────────────────────────────────────────────── model
 
-// The flyer is a fighter with a condor's markings, sculpted in voxels: swept wings whose tips
-// split into feathers, twin fins and engines; dark body, white collar and wing bars, and a red
-// nose for the condor's head. Its shape is described once, in design units (MW across the
-// wings, ML nose to tail, MH tall), and cut into MK voxels per unit. Each voxel on the surface
-// remembers which way it faces and how tucked-in it is, so it can be lit as a solid thing.
+// The flyers are fighters in the likeness of two animals of the southern forests: Darwin's
+// frog (player one) and the monito del monte (player two). Both share one airframe, sculpted
+// in voxels — swept wings whose tips split like toes, twin fins and engines — and differ in the
+// head: the frog has two bulging eyes and a long pointed snout; the monito a round head with
+// big dark eyes, round ears and a pink nose, and a thick tail behind. The shape is described
+// once, in design units (MW across the wings, ML nose to tail, MH tall), and cut into MK voxels
+// per unit. Each voxel on the surface remembers which way it faces and how tucked-in it is,
+// so it can be lit as a solid thing.
 const MW = 47;
 const ML = 49;
 const MH = 13;
@@ -586,56 +610,64 @@ const WINGTIPS = [
   [21, MPJ - 36, 0],
 ];
 
-const model = { n: 0, a: null, b: null, c: null, w: null, col: null, ni: null, ao: null, gi: null, gj: null, gk: null, used: null };
-const GRID = new Uint8Array(GW * GL * GH); // the whole block, for casting the flyer's shadows on itself
-const MASK = new Uint8Array(MW * ML); // the flyer from above, for its shadow on the ground
+const MODELS = [];
+const MASK = new Uint8Array(MW * ML); // a flyer from above, for its shadow on the ground
 const NQ = new Float32Array(4096 * 3); // the directions a surface can face, 16 steps a side
 
 function inEll(x, y, z, rx, ry, rz) {
   return (x / rx) ** 2 + (y / ry) ** 2 + (z / rz) ** 2 <= 1;
 }
 
-// What the flyer is made of at a point: x across from the centre line, y back from the nose,
-// z up. 0 is empty air.
-function partAt(x, y, z) {
+// What flyer `who` is made of at a point: x across from the centre line, y back from the
+// nose, z up. 0 is empty air.
+function partAt(x, y, z, who) {
   const d = Math.abs(x);
-  if (inEll(x, y - 16, z - 7, 1.7, 4.4, 1.6)) return GLASS; // canopy
-  if (inEll(x, y - 11, z - 5, 3.1, 1.6, 2.9)) return PLUME; // collar
-  if (inEll(x, y - 5, z - 5, 1.7, 6, 1.6)) return HEAD; // nose
-  if (inEll(x, y - 23, z - 5, 3.4, 21, 2.9)) return NAVY; // body
-  if (d > 3.4 && d < 5.6 && y > 18.5 && y < 23.5 && z > 2.5 && z < 5.5) return y < 19.5 ? ENGINE : NAVY; // air intakes
-  if (y > 29.5 && y < 47.5 && (d - 3) ** 2 + (z - 4.5) ** 2 < 5.2) return y > 46.4 ? GLOW : y > 43.5 ? ENGINE : NAVY; // engines
+  if (who) {
+    if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
+    if (inEll(d - 2.9, y - 13.5, z - 8.3, 1.5, 0.7, 1.6)) return PLUME; // ears
+    if (inEll(x, y - 2.4, z - 5, 0.9, 1.4, 0.8)) return HEAD; // nose
+    if (inEll(x, y - 8.5, z - 5.2, 3.2, 6.2, 2.9)) return BODY; // head
+    if (inEll(x, y - 42, z - 6.6, 1.3, 6.5, 1.2)) return BODY; // tail
+    if (inEll(x, y - 16, z - 5, 3.2, 1.5, 2.9)) return PLUME; // collar
+  } else {
+    if (inEll(d - 1.8, y - 13.5, z - 7.1, 1.3, 2.1, 1.25)) return GLASS; // eyes
+    if (inEll(x, y - 4.5, z - 5, 1.25, 6.4, 1.15)) return HEAD; // snout
+  }
+  if (inEll(x, y - 23, z - 5, 3.4, 21, 2.9)) return BODY;
+  if (d > 3.4 && d < 5.6 && y > 18.5 && y < 23.5 && z > 2.5 && z < 5.5) return y < 19.5 ? ENGINE : BODY; // air intakes
+  if (y > 29.5 && y < 47.5 && (d - 3) ** 2 + (z - 4.5) ** 2 < 5.2) return y > 46.4 ? GLOW : y > 43.5 ? ENGINE : BODY; // engines
   if (y > 35.5 && y < 46.5 && z > 5.5) {
-    // twin fins, leaning outwards, red at the top
+    // twin fins, leaning outwards, tipped with the flyer's colour
     const top = Math.min(11.5, 6.5 + (y - 35.5) * 0.9);
-    if (z < top && Math.abs(d - (3 + (z - 6) * 0.45)) < 0.55) return z > 8.6 && z > top - 1.6 ? HEAD : NAVY;
+    if (z < top && Math.abs(d - (3 + (z - 6) * 0.45)) < 0.55) return z > 8.6 && z > top - 1.6 ? HEAD : BODY;
   }
   if (d < 10.5) {
     // tailplanes
     const le = 39.5 + d * 0.55;
-    if (y > le && y < 46.5 + d * 0.2 && Math.abs(z - 4) < 0.5 && (d < 7.5 || (y - le) % 3 < 2)) return NAVY;
+    if (y > le && y < 46.5 + d * 0.2 && Math.abs(z - 4) < 0.5 && (d < 7.5 || (y - le) % 3 < 2)) return BODY;
   }
   if (d < 22.5) {
-    // wings: swept back, thick at the root and thin at the tips, which split into feathers
+    // wings: swept back, thick at the root and thin at the tips, which split like toes
     const le = 16.5 + d * 0.62;
     const te = 36.5 + d * 0.08;
     if (y > le && y < te) {
       if (d > 16.5 && ((y - le) % 3 > 2 || d > 22.5 - Math.floor((y - le) / 3) * 1.5)) return 0;
       const along = (y - le) / (te - le);
       const half = Math.max(0.5, (0.45 + 1.5 * (1 - d / 22)) * Math.sqrt(4 * along * (1 - along)));
-      if (Math.abs(z - 4.2) < half) return d > 4.5 && d < 15.5 && y > te - 5 && y < te - 2 ? PLUME : NAVY;
+      if (Math.abs(z - 4.2) < half) return d > 4.5 && d < 15.5 && y > te - 5 && y < te - 2 ? PLUME : BODY;
     }
   }
   return 0;
 }
 
-function buildModel() {
-  const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= GW || j >= GL || k >= GH ? 0 : GRID[(k * GL + j) * GW + i]);
+function buildModel(who) {
+  const grid = new Uint8Array(GW * GL * GH); // the whole block, for casting the flyer's shadows on itself
+  const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= GW || j >= GL || k >= GH ? 0 : grid[(k * GL + j) * GW + i]);
   for (let k = 0; k < GH; k++) {
     for (let j = 0; j < GL; j++) {
       for (let i = 0; i < GW; i++) {
-        const v = partAt((i + 0.5) / MK - 0.5 - MCX, (j + 0.5) / MK - 0.5, (k + 0.5) / MK - 0.5);
-        GRID[(k * GL + j) * GW + i] = v;
+        const v = partAt((i + 0.5) / MK - 0.5 - MCX, (j + 0.5) / MK - 0.5, (k + 0.5) / MK - 0.5, who);
+        grid[(k * GL + j) * GW + i] = v;
         if (v) MASK[((j / MK) | 0) * MW + ((i / MK) | 0)] = 1;
       }
     }
@@ -658,6 +690,7 @@ function buildModel() {
   const col = [];
   const ni = [];
   const ao = [];
+  const hot = [];
   const gi = [];
   const gj = [];
   const gk = [];
@@ -700,6 +733,7 @@ function buildModel() {
         col.push(v);
         ni.push(q);
         ao.push(share > 0.5 ? 1 - Math.min(0.5, (share - 0.5) * 1.6) : 1 + Math.min(0.14, (0.5 - share) * 0.4));
+        hot.push(Math.max(0, 1 - Math.hypot(Math.abs(x) - 3, y - 47, z - 4.5) / 9)); // how close to a burner: the fire lights it
         gi.push(i);
         gj.push(j);
         gk.push(k);
@@ -707,18 +741,22 @@ function buildModel() {
       }
     }
   }
-  model.n = a.length;
-  model.a = Float32Array.from(a);
-  model.b = Float32Array.from(b);
-  model.c = Float32Array.from(c);
-  model.w = Float32Array.from(w);
-  model.col = Uint8Array.from(col);
-  model.ni = Uint16Array.from(ni);
-  model.ao = Float32Array.from(ao);
-  model.gi = Uint8Array.from(gi);
-  model.gj = Uint8Array.from(gj);
-  model.gk = Uint8Array.from(gk);
-  model.used = Uint16Array.from(used);
+  MODELS[who] = {
+    n: a.length,
+    grid,
+    a: Float32Array.from(a),
+    b: Float32Array.from(b),
+    c: Float32Array.from(c),
+    w: Float32Array.from(w),
+    col: Uint8Array.from(col),
+    ni: Uint16Array.from(ni),
+    ao: Float32Array.from(ao),
+    hot: Float32Array.from(hot),
+    gi: Uint8Array.from(gi),
+    gj: Uint8Array.from(gj),
+    gk: Uint8Array.from(gk),
+    used: Uint16Array.from(used),
+  };
 }
 
 // ───────────────────────────────────────────────────────────── state
@@ -728,11 +766,15 @@ const TRAIL_STEP = 1; // world units between them
 const PUFF_N = 240; // smoke, fire, spray and dust: all the soft round things
 const PUFF_F = 10;
 
-function makeFlyer() {
+function makeFlyer(id) {
   return {
+    id, // 0: Darwin the frog, player one · 1: the monito del monte, player two
+    key: 'P' + (id + 1) + '_', // its buttons
+    m: null, // its model
     x: 0,
     y: 0,
     z: 0,
+    s: 0, // how far to the side of the squad it flies
     yaw: 0,
     bank: 0,
     pitch: 0,
@@ -743,6 +785,17 @@ function makeFlyer() {
     rollT: 0,
     rollDir: 1,
     flex: 0.02, // how far the wings are bent up
+    stam: 100, // boost left for the burners
+    dash: 0, // seconds of dash still to run
+    rest: 0,
+    kick: 0, // the bounce off the ground
+    inv: 0, // seconds of safety after a hit
+    fireCd: 0,
+    lock: null, // what its guns are tracking
+    side: 0, // which side of the power line it was on
+    agl: 0, // its height above the ground
+    dx: 0, // the last way its stick was thrown, to count the thrashing
+    dy: 0,
     trail: [new Float32Array(TRAIL_N * 3), new Float32Array(TRAIL_N * 3)],
     trailHead: 0,
     trailLen: 0,
@@ -757,21 +810,23 @@ function makeFlyer() {
   };
 }
 
-const lead = makeFlyer(); // the condor
+const lead = makeFlyer(0);
+const mate = makeFlyer(1);
+const crew = [lead]; // who is flying: Darwin alone, or with the monito once player two joins
+const sq = { x: 0, y: 0, z: 0, yaw: 0 }; // the squad: the point the crew fly about, which the camera follows
 const puffs = new Float32Array(PUFF_N * PUFF_F);
 let puffHead = 0;
-let smokeClock = 0;
 
 const cam = { x: 0, y: 0, yaw: 0, zr: 0, S: 1, q: 0.01, k: 0.2, cy: BH / 2 };
 let now = 0;
 let windX = 0;
 let windY = 0;
 
-// The game: the condor flies rescue over Chile while hacker drones hunt it.
+// The game: the crew fly rescue over Chile while hacker drones hunt them.
 const TITLE = 0;
 const PLAY = 1;
 const OVER = 2;
-const SHOT = 240; // how fast the condor's shots fly
+const SHOT = 240; // how fast the crew's shots fly
 const G = {
   mode: TITLE,
   t: 0, // seconds in this mode
@@ -779,25 +834,15 @@ const G = {
   best: 0,
   mult: 1, // flying low multiplies every reward
   low: 0,
-  shield: 100,
-  inv: 0, // seconds of safety after a hit
-  kick: 0, // the bounce off the ground
-  fireCd: 0,
-  stam: 100, // boost left for the burners
-  dash: 0, // seconds of dash still to run
-  rest: 0,
-  agl: 0, // height above the ground, and the ground's height, for the panel
+  shield: 100, // one shield for the whole crew
+  agl: 0, // the lowest of the crew's heights above the ground, and the ground's height, for the panel
   gnd: 0,
   water: 0, // loads of water aboard
   fill: 0,
   hacked: 0,
-  purge: 0, // how far the pilot has shaken the hacker off
+  purge: 0, // how far the crew have shaken the hacker off
   chan: 0, // how far a hacker has got with breaking in
   immune: 0,
-  dirX: 0,
-  dirY: 0,
-  side: 0, // which side of the power line the condor was on
-  lock: null, // what the guns are tracking
   spawnT: 0,
   hackT: 0,
   fenceT: 0,
@@ -810,7 +855,7 @@ const G = {
   flash: 0,
 };
 const drones = [];
-const shots = []; // k: 0 the condor's, 1 the enemy's, 2 a load of water
+const shots = []; // k: 0 the crew's, 1 the enemy's, 2 a load of water
 const fires = [];
 const folk = []; // people waiting for rescue
 const fences = [];
@@ -902,16 +947,16 @@ function damage(d) {
   G.shield -= d;
   if (G.shield > 0 || G.mode !== PLAY) return;
   G.shield = 0;
-  boom(lead.x, lead.y, lead.z, 40);
+  for (const f of crew) boom(f.x, f.y, f.z, 40);
   G.mode = OVER;
   G.t = 0;
   G.hacked = 0;
   if (G.score > G.best) G.best = G.score;
 }
 
-function hurt(d, why) {
-  if (G.inv > 0 || G.mode !== PLAY) return;
-  G.inv = 1;
+function hurt(f, d, why) {
+  if (f.inv > 0 || G.mode !== PLAY) return;
+  f.inv = 1;
   G.shake = 1;
   G.flash = 0.5;
   say(why, 1.2);
@@ -920,23 +965,32 @@ function hurt(d, why) {
 }
 
 function resetFlight() {
-  lead.x = N * 0.41; // over the valley, heading north: sea to the left, cordillera to the right
-  lead.y = N * 0.5;
+  sq.x = N * 0.41; // over the valley, heading north: sea to the left, cordillera to the right
+  sq.y = N * 0.5;
+  sq.yaw = cam.yaw = 0.12;
+  cam.x = sq.x;
+  cam.y = sq.y;
   lead.z = P.cruiseAlt;
-  lead.yaw = 0.12;
-  cam.yaw = lead.yaw;
-  cam.x = lead.x;
-  cam.y = lead.y;
   lead.trailLen = 0;
   puffs.fill(0);
 }
 
-function startGame() {
-  Object.assign(G, { mode: PLAY, t: 0, score: 0, mult: 1, low: 0, shield: 100, inv: 2, kick: 0, stam: 100, dash: 0, water: 0, hacked: 0, purge: 0, chan: 0, immune: 0, spawnT: 4, hackT: 20, fenceT: 9, emT: 10, emN: 0, satT: 14, flash: 0, side: 0 });
+// Player two comes in: the crew spread out to either side of the squad.
+function join() {
+  crew[1] = mate;
+  Object.assign(mate, { z: lead.z, s: 8, stam: 100, inv: 2, trailLen: 0, kick: 0, rollT: 0, x: lead.x, y: lead.y });
+  lead.s = -8;
+  say('¡LLEGA EL MONITO DEL MONTE!', 2.5);
+}
+
+function startGame(two) {
+  Object.assign(G, { mode: PLAY, t: 0, score: 0, mult: 1, low: 0, shield: 100, water: 0, hacked: 0, purge: 0, chan: 0, immune: 0, spawnT: 4, hackT: 20, fenceT: 9, emT: 10, emN: 0, satT: 14, flash: 0 });
   drones.length = shots.length = fires.length = folk.length = fences.length = 0;
   sat = em = null;
-  lead.z = Math.max(lead.z, groundAt(lead.x, lead.y) + 20);
-  say('¡DESPEGA, CÓNDOR!', 2);
+  crew.length = 1;
+  Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: Math.max(lead.z, groundAt(lead.x, lead.y) + 20) });
+  say('¡DESPEGA, DARWIN!', 2);
+  if (two) join();
 }
 
 // ───────────────────────────────────────────────────────────── simulation
@@ -965,7 +1019,7 @@ function axesOf(f) {
   a[8] = uz * cr;
 }
 
-// A point on the model (in voxels from the pivot) → the world.
+// A point on the model (in design units from the pivot) → the world.
 function modelPoint(f, ma, mb, mc, out, o) {
   const a = f.ax;
   const s = P.modelScale;
@@ -978,13 +1032,13 @@ function spawnDrone(k) {
   drones.push({ k, hp: k ? 4 : 2, r: k ? 1.9 : 1.5, a: 190, s: spread() * 50, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: 1.5 + rand(), ch: 0, x: 0, y: 0, z: 0 });
 }
 
-// A spot of ground near the condor, mostly ahead of it, that passes the test.
+// A spot of ground near the squad, mostly ahead of it, that passes the test.
 function landNear(near, far, test) {
   for (let n = 0; n < 80; n++) {
-    const a = lead.yaw + spread() * 1.4;
+    const a = sq.yaw + spread() * 1.4;
     const d = near + rand() * (far - near);
-    const x = lead.x + Math.sin(a) * d;
-    const y = lead.y - Math.cos(a) * d;
+    const x = sq.x + Math.sin(a) * d;
+    const y = sq.y - Math.cos(a) * d;
     if (x > 4 && x < N - 4 && test(GR[cell(x, y)] / GS)) return [x, y];
   }
   return null;
@@ -1012,12 +1066,12 @@ function startFlood() {
   let bd = 1e9;
   let by = 0;
   for (const q of QUEB) {
-    const dy = ((((q >> NS) - lead.y) % N) + N * 1.5) % N - N / 2; // the short way round, north or south
-    const d = Math.abs(Math.hypot((q & NM) - lead.x, dy) - 190);
+    const dy = ((((q >> NS) - sq.y) % N) + N * 1.5) % N - N / 2; // the short way round, north or south
+    const d = Math.abs(Math.hypot((q & NM) - sq.x, dy) - 190);
     if (d < bd) {
       bd = d;
       best = q;
-      by = lead.y + dy;
+      by = sq.y + dy;
     }
   }
   if (best < 0) return false;
@@ -1080,118 +1134,103 @@ function simulate(dt) {
   windX = (windX + dt * 2) % N;
   windY = (windY + dt * 0.8) % N;
   G.t += dt;
-  G.inv -= dt;
   G.immune -= dt;
   G.msgT -= dt;
   G.shake *= Math.exp(-5 * dt);
   G.flash *= Math.exp(-4 * dt);
   const play = G.mode === PLAY;
+  if (play && !crew[1] && pressed.START2) join();
+  const duo = crew.length > 1;
+  const n = crew.length;
+  const sx = Math.sin(sq.yaw); // the way the squad is heading …
+  const sy = -Math.cos(sq.yaw);
+  const rx = -sy; // … and its right
 
-  // ── the stick flies the condor — backwards while it is hacked. Out of play, it wanders.
-  const rawX = (held.P1_R ? 1 : 0) - (held.P1_L ? 1 : 0);
-  const rawY = (held.P1_U ? 1 : 0) - (held.P1_D ? 1 : 0);
-  let turn = rawX;
-  let lift = P.invertY ? -rawY : rawY;
-  const sx = Math.sin(lead.yaw);
-  const sy = -Math.cos(lead.yaw);
-  const ground = Math.max(groundAt(lead.x, lead.y), groundAt(lead.x + sx * 3, lead.y + sy * 3));
-  if (!play) {
-    turn = Math.sin(now * 0.23) * 0.45;
-    lift = clamp((Math.max(ground, groundAt(lead.x + sx * 25, lead.y + sy * 25)) + 16 - lead.z) / 6, -1, 1);
-  } else if (G.hacked) {
-    turn = -turn;
-    lift = -lift;
-  }
-  lead.turn += (turn - lead.turn) * (1 - Math.exp(-6 * dt));
-  lead.lift += (lift - lead.lift) * (1 - Math.exp(-5 * dt));
-  // B4: a dash throws the condor forward, and holding it keeps the burners lit — for as long
-  // as there is boost left. Boost comes back once the burners have been off for a moment.
-  let burn = 0.3;
-  if (play) {
-    if (pressed.P1_4 && G.stam > 18) {
-      G.dash = 0.4;
-      G.stam -= 18;
-      burst(0.35, 0.2);
+  // ── each of the crew at their stick. Alone, the stick turns the squad. With two, each
+  // slides to the side on their own stick, and the squad turns the way they lean together.
+  // Hacked, the sticks are reversed and the guns are dead until the crew shake it off, by
+  // thrashing the sticks about and hammering their fire buttons.
+  let turns = 0;
+  let pushes = 0;
+  for (const f of crew) {
+    const k = f.key;
+    const rawX = (held[k + 'R'] ? 1 : 0) - (held[k + 'L'] ? 1 : 0);
+    const rawY = (held[k + 'U'] ? 1 : 0) - (held[k + 'D'] ? 1 : 0);
+    let turn = rawX;
+    let lift = P.invertY ? -rawY : rawY;
+    if (!play) {
+      turn = Math.sin(now * 0.23) * 0.45; // out of play, it wanders by itself
+      lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + 16 - f.z) / 6, -1, 1);
+    } else if (G.hacked) {
+      turn = -turn;
+      lift = -lift;
+      if (rawX && rawX !== f.dx) {
+        f.dx = rawX;
+        G.purge += 0.1;
+      }
+      if (rawY && rawY !== f.dy) {
+        f.dy = rawY;
+        G.purge += 0.1;
+      }
+      if (pressed[k + '1']) G.purge += 0.07;
     }
-    if (held.P1_4 && G.stam > 0) {
-      burn = 1;
-      G.stam = Math.max(0, G.stam - dt * 24);
-      G.rest = 0.6;
-    } else if (!held.P1_4 && (G.rest -= dt) < 0) G.stam = Math.min(100, G.stam + dt * 18);
+    f.turn += (turn - f.turn) * (1 - Math.exp(-6 * dt));
+    f.lift += (lift - f.lift) * (1 - Math.exp(-5 * dt));
+
+    // B4: a dash throws it forward, and holding it keeps the burners lit — for as long as
+    // there is boost left. Boost comes back once the burners have been off for a moment.
+    let burn = 0.3;
+    if (play) {
+      if (pressed[k + '4'] && f.stam > 18) {
+        f.dash = 0.4;
+        f.stam -= 18;
+        burst(0.35, 0.2);
+      }
+      if (held[k + '4'] && f.stam > 0) {
+        burn = 1;
+        f.stam = Math.max(0, f.stam - dt * 24);
+        f.rest = 0.6;
+      } else if (!held[k + '4'] && (f.rest -= dt) < 0) f.stam = Math.min(100, f.stam + dt * 18);
+    }
+    f.dash -= dt;
+    if (f.dash > 0) burn = 1.9;
+    f.thr += (burn - f.thr) * (1 - Math.exp((f.dash > 0 ? -16 : -4) * dt));
+    const push = Math.max(0, (f.thr - 0.3) / 0.7);
+    const fast = 1 + (P.boost - 1) * push;
+    f.inv -= dt;
+    f.bank = (f.turn * P.bankAngle * Math.PI) / 180;
+    f.pitch = Math.atan2(f.lift * P.climbRate, P.speed);
+    f.kick *= Math.exp(-4 * dt);
+    f.z = Math.min(P.ceiling, f.z + (f.lift * P.climbRate * fast + f.kick) * dt);
+    if (duo) f.s += f.turn * 26 * dt;
+
+    // barrel rolls: one full turn about the nose, left or right, sliding it that way. While
+    // it rolls, shots glance off it and laser fences cannot hold it.
+    if (play && (pressed[k + '2'] || pressed[k + '3']) && f.rollT <= 0) {
+      f.rollT = 1;
+      f.rollDir = pressed[k + '2'] ? -1 : 1;
+      tone(240, 880, 0.6, 'sine', 0.06);
+    }
+    if (f.rollT > 0) {
+      const was = f.rollT;
+      f.rollT = Math.max(0, was - dt / P.rollTime);
+      f.roll = f.rollDir * TAU * ease(1 - f.rollT);
+      // the slide is quickest half-way through the roll
+      const slide = (f.rollDir * P.rollSlide * (Math.cos(Math.PI * f.rollT) - Math.cos(Math.PI * was))) / 2;
+      if (duo) f.s += slide;
+      else {
+        sq.x += rx * slide;
+        sq.y += sx * slide;
+      }
+    } else f.roll = 0;
+    f.s = duo ? clamp(f.s, -24, 24) : 0;
+    turns += f.turn / n;
+    pushes += push / n;
   }
-  G.dash -= dt;
-  if (G.dash > 0) burn = 1.9;
-  lead.thr += (burn - lead.thr) * (1 - Math.exp((G.dash > 0 ? -16 : -4) * dt));
-  const push = Math.max(0, (lead.thr - 0.3) / 0.7);
-  const spd = P.speed * (1 + (P.boost - 1) * push);
-
-  lead.yaw += lead.turn * P.turnRate * dt;
-  lead.bank = (lead.turn * P.bankAngle * Math.PI) / 180;
-  const vz = lead.lift * P.climbRate * (spd / P.speed);
-  lead.pitch = Math.atan2(vz, spd);
-  lead.x += sx * spd * dt;
-  lead.y += sy * spd * dt;
-  G.kick *= Math.exp(-4 * dt);
-  lead.z = Math.min(P.ceiling, lead.z + (vz + G.kick) * dt);
-
-  // the ground is solid: hitting it costs shield and throws the condor back up
-  let agl = lead.z - ground;
-  G.gnd = ground;
-  if (agl < 1) {
-    lead.z = ground + 1;
-    agl = 1;
-    G.kick = 34;
-    G.low = 0;
-    hurt(30, '¡CHOQUE!');
-  }
-  G.agl = agl;
-  // flying low multiplies every reward
-  if (play) {
-    G.low = agl < 8 ? Math.min(10, G.low + dt) : Math.max(0, G.low - dt * 4);
-    G.mult = 1 + ((G.low / 2.5) | 0);
-  }
-
-  // barrel rolls: one full turn about the nose, left or right, sliding the condor that way.
-  // While it rolls, shots glance off it and laser fences cannot hold it.
-  if (play && (pressed.P1_2 || pressed.P1_3) && lead.rollT <= 0) {
-    lead.rollT = 1;
-    lead.rollDir = pressed.P1_2 ? -1 : 1;
-    tone(240, 880, 0.6, 'sine', 0.06);
-  }
-  if (lead.rollT > 0) {
-    const was = lead.rollT;
-    lead.rollT = Math.max(0, was - dt / P.rollTime);
-    lead.roll = lead.rollDir * TAU * ease(1 - lead.rollT);
-    // the slide is quickest half-way through the roll
-    const slide = (lead.rollDir * P.rollSlide * (Math.cos(Math.PI * lead.rollT) - Math.cos(Math.PI * was))) / 2;
-    lead.x -= sy * slide;
-    lead.y += sx * slide;
-  } else lead.roll = 0;
-
-  // the wings bend up a little in a climb
-  lead.flex += (0.02 + lead.lift * 0.05 - lead.flex) * (1 - Math.exp(-10 * dt));
-  axesOf(lead);
-  const nx = lead.ax[3];
-  const ny = lead.ax[4];
-  const nz = lead.ax[5];
-  const cfx = Math.sin(cam.yaw); // the way the camera looks: enemies keep their station in front of it
-  const cfy = -Math.cos(cam.yaw);
-
-  // ── the hack: the stick is reversed and the guns are dead until the pilot shakes it off,
-  // by thrashing the stick about and hammering the fire button
   if (G.hacked) {
-    if (rawX && rawX !== G.dirX) {
-      G.dirX = rawX;
-      G.purge += 0.1;
-    }
-    if (rawY && rawY !== G.dirY) {
-      G.dirY = rawY;
-      G.purge += 0.1;
-    }
-    if (pressed.P1_1) G.purge += 0.07;
     G.purge = Math.max(0, G.purge - dt * 0.15);
     damage(dt * 2.5);
-    if ((now * 3 | 0) !== ((now - dt) * 3 | 0)) tone(520, 260, 0.25, 'square', 0.07); // the alarm
+    if (((now * 3) | 0) !== (((now - dt) * 3) | 0)) tone(520, 260, 0.25, 'square', 0.07); // the alarm
     if (G.purge >= 1) {
       G.hacked = 0;
       G.immune = 9;
@@ -1201,28 +1240,140 @@ function simulate(dt) {
     }
   }
 
-  // ── guns: they track whatever enemy is nearest the line of the nose
-  G.lock = null;
-  let best = 0.035;
-  const aim = (t) => {
-    const dx = t.x - lead.x;
-    const dy = t.y - lead.y;
-    const dz = t.z - lead.z;
-    const d = Math.hypot(dx, dy, dz);
-    const off = 1 - (dx * nx + dy * ny + dz * nz) / d;
-    if (d < 150 && off < best) {
-      best = off;
-      G.lock = t;
+  // ── the squad flies on
+  const spd = P.speed * (1 + (P.boost - 1) * pushes);
+  sq.yaw += turns * P.turnRate * (duo ? 0.8 : 1) * dt;
+  sq.x += sx * spd * dt;
+  sq.y += sy * spd * dt;
+
+  // ── each of the crew in the world: the ground, their guns, the things they can hit
+  const mid = sq.z; // where the crew were, on average: two cannot drift far apart in height
+  let top = 0;
+  sq.z = 0;
+  G.agl = 1e9;
+  for (const f of crew) {
+    f.x = sq.x + rx * f.s;
+    f.y = sq.y + sx * f.s;
+    f.yaw = sq.yaw + (duo ? f.turn * 0.3 : 0); // with two, the nose swings with the stick, to aim
+    if (duo) f.z = clamp(f.z, mid - 14, mid + 14);
+
+    // the ground is solid: hitting it costs shield and throws the flyer back up
+    const ground = Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 3, f.y + sy * 3));
+    if (f.z - ground < 1) {
+      f.z = ground + 1;
+      f.kick = 34;
+      G.low = 0;
+      hurt(f, 30, '¡CHOQUE!');
     }
-  };
-  drones.forEach(aim);
-  if (sat) aim(sat);
-  G.fireCd -= dt;
-  if (play && held.P1_1 && !G.hacked && G.fireCd <= 0) {
-    G.fireCd = 0.12;
-    tone(1100, 320, 0.07, 'square', 0.03);
-    shots.push({ k: 0, x: lead.x + nx * 3, y: lead.y + ny * 3, z: lead.z + nz * 3, vx: nx * SHOT, vy: ny * SHOT, vz: nz * SHOT, t: 0.7, to: G.lock });
+    f.agl = f.z - ground;
+    G.agl = Math.min(G.agl, f.agl);
+    top = Math.max(top, f.agl);
+    sq.z += f.z / n;
+
+    // the wings bend up a little in a climb
+    f.flex += (0.02 + f.lift * 0.05 - f.flex) * (1 - Math.exp(-10 * dt));
+    axesOf(f);
+    const nx = f.ax[3];
+    const ny = f.ax[4];
+    const nz = f.ax[5];
+
+    // guns: they track whatever enemy is nearest the line of the nose
+    f.lock = null;
+    let best = 0.035;
+    const aim = (t) => {
+      const dx = t.x - f.x;
+      const dy = t.y - f.y;
+      const dz = t.z - f.z;
+      const d = Math.hypot(dx, dy, dz);
+      const off = 1 - (dx * nx + dy * ny + dz * nz) / d;
+      if (d < 150 && off < best) {
+        best = off;
+        f.lock = t;
+      }
+    };
+    drones.forEach(aim);
+    if (sat) aim(sat);
+    f.fireCd -= dt;
+    if (play && held[f.key + '1'] && !G.hacked && f.fireCd <= 0) {
+      f.fireCd = 0.12;
+      tone(1100, 320, 0.07, 'square', 0.03);
+      shots.push({ k: 0, x: f.x + nx * 3, y: f.y + ny * 3, z: f.z + nz * 3, vx: nx * SHOT, vy: ny * SHOT, vz: nz * SHOT, t: 0.7, to: f.lock });
+    }
+
+    if (play) {
+      // the power line: the cables and the pylons are solid; slipping under the cables pays
+      const off = f.x - lineX(f.y);
+      const span = (f.y - 16) / PYLON;
+      const j = Math.floor(span);
+      const fr = span - j;
+      const wire = pylonTop(j) + (pylonTop(j + 1) - pylonTop(j)) * fr - ARM - SAG * 2 * Math.min(fr, 1 - fr);
+      if (Math.abs(off) < 3.4 && Math.abs(f.z - wire) < 0.9) hurt(f, 18, '¡CABLES!');
+      else if (Math.abs(off) < 1.6 && (fr < 0.06 || fr > 0.94) && f.z < wire + ARM) hurt(f, 25, '¡TORRE!');
+      else if (off * f.side < 0 && Math.abs(off) < 3 && f.z < wire) gain(120, 'BAJO LOS CABLES');
+      f.side = off;
+
+      // buildings are solid too
+      for (const t of TOWNS) {
+        const dy = f.y - t.y - Math.round((f.y - t.y) / N) * N; // the town's nearest self, north or south
+        if (Math.abs(f.x - t.x) + Math.abs(dy) > 26) continue;
+        for (let o = 0; o < t.b.length; o += 6) {
+          const w = t.b[o + 4] + 0.8;
+          if (Math.abs(f.x - t.b[o]) < w && Math.abs(dy - t.b[o + 1] + t.y) < w && f.z < t.b[o + 2] + t.b[o + 3] + 0.3) {
+            hurt(f, 25, '¡EDIFICIO!');
+            f.kick = 24;
+          }
+        }
+      }
+
+      // water: skim the sea or a river to take it on, B5 to let a load go
+      if (GR[cell(f.x, f.y)] <= G_SHALLOW * GS && f.agl < 3.5 && G.water < 3) {
+        G.fill += dt;
+        puff(f.x, f.y, ground + 0.3, spread() * 5 - sx * 8, spread() * 5 - sy * 8, 5 + rand() * 5, 0.5, 3, 0.8);
+        if (G.fill > 0.4) {
+          G.fill = 0;
+          G.water++;
+          say('AGUA A BORDO', 1);
+          tone(300, 600, 0.12, 'sine', 0.1);
+        }
+      }
+      if (pressed[f.key + '5'] && G.water > 0) {
+        G.water--;
+        shots.push({ k: 2, x: f.x, y: f.y, z: f.z - 1, vx: sx * spd, vy: sy * spd, vz: -4, t: 8 });
+      }
+    }
+
+    // wingtip trails and exhaust
+    const up = (WINGTIPS[1][0] - WING_ROOT) * f.flex;
+    modelPoint(f, WINGTIPS[0][0], WINGTIPS[0][1], WINGTIPS[0][2] + up, f.tip, 0);
+    modelPoint(f, WINGTIPS[1][0], WINGTIPS[1][1], WINGTIPS[1][2] + up, f.tip, 3);
+    if (G.mode === OVER) f.trailLen = 0;
+    else if (!f.trailLen || Math.hypot(f.x - f.trailX, f.y - f.trailY) >= TRAIL_STEP) {
+      f.trailHead = (f.trailHead + 1) % TRAIL_N;
+      if (f.trailLen < TRAIL_N) f.trailLen++;
+      f.trailX = f.x;
+      f.trailY = f.y;
+      for (let s = 0; s < 2; s++) {
+        const o = f.trailHead * 3;
+        f.trail[s][o] = f.tip[s * 3];
+        f.trail[s][o + 1] = f.tip[s * 3 + 1];
+        f.trail[s][o + 2] = f.tip[s * 3 + 2];
+      }
+    }
+    if (G.mode !== OVER && f.thr > 0.6 && rand() < dt * 50) {
+      for (const nz2 of NOZZLES) {
+        modelPoint(f, nz2[0], nz2[1] - 6, nz2[2], TIP, 0);
+        puff(TIP[0], TIP[1], TIP[2], -nx * 9 + spread() * 1.5, -ny * 9 + spread() * 1.5, 1 + rand() * 1.5, 0.9 + rand() * 0.6, 0, 0.5);
+      }
+    }
   }
+  G.gnd = groundAt(sq.x, sq.y);
+  // flying low — all of the crew — multiplies every reward
+  if (play) {
+    G.low = top < 8 ? Math.min(10, G.low + dt) : Math.max(0, G.low - dt * 4);
+    G.mult = 1 + ((G.low / 2.5) | 0);
+  }
+  const cfx = Math.sin(cam.yaw); // the way the camera looks: enemies keep their station in front of it
+  const cfy = -Math.cos(cam.yaw);
 
   // ── shots and loads of water
   for (let i = shots.length - 1; i >= 0; i--) {
@@ -1243,37 +1394,36 @@ function simulate(dt) {
     s.t -= dt;
     let dead = s.t <= 0;
     const gz = groundAt(s.x, s.y);
+    const hit = (d) => {
+      if (dead || Math.hypot(d.x - s.x, d.y - s.y, d.z - s.z) > (d.r || 1.4) + 1) return;
+      dead = true;
+      puff(s.x, s.y, s.z, 0, 0, 0, 0.14, 2, 1.3);
+      if (!s.k) d.hp--;
+      else if (d.rollT <= 0) hurt(d, 14, '¡IMPACTO!'); // a roll turns it aside
+    };
     if (s.z < gz) {
       dead = true;
       if (s.k === 2) douse(s.x, s.y, gz);
       else puff(s.x, s.y, gz + 0.3, 0, 0, 2, 0.3, 4, 0.6);
     } else if (!s.k) {
-      const hit = (d) => {
-        if (dead || Math.hypot(d.x - s.x, d.y - s.y, d.z - s.z) > d.r + 1) return;
-        d.hp--;
-        dead = true;
-        puff(s.x, s.y, s.z, 0, 0, 0, 0.12, 2, 1.2);
-      };
       drones.forEach(hit);
       if (sat) hit(sat);
-    } else if (s.k === 1 && play && Math.hypot(lead.x - s.x, lead.y - s.y, lead.z - s.z) < 2.4) {
-      dead = true;
-      if (lead.rollT > 0) puff(s.x, s.y, s.z, 0, 0, 0, 0.15, 2, 1.5);
-      else hurt(14, '¡IMPACTO!');
-    }
+    } else if (s.k === 1 && play) crew.forEach(hit);
     if (dead) shots.splice(i, 1);
   }
   const shootAt = (d, size) => {
-    const t = Math.hypot(lead.x - d.x, lead.y - d.y, lead.z - d.z) / 70; // lead the condor a little
-    const tx = lead.x + sx * spd * t * 0.8 - d.x;
-    const ty = lead.y + sy * spd * t * 0.8 - d.y;
-    const tz = lead.z + vz * t * 0.8 - d.z;
+    const f = crew[(rand() * n) | 0];
+    const t = Math.hypot(f.x - d.x, f.y - d.y, f.z - d.z) / 70; // lead the target a little
+    const tx = f.x + sx * spd * t * 0.8 - d.x;
+    const ty = f.y + sy * spd * t * 0.8 - d.y;
+    const tz = f.z - d.z;
     const l = 70 / Math.hypot(tx, ty, tz);
     shots.push({ k: 1, x: d.x, y: d.y, z: d.z, vx: tx * l, vy: ty * l, vz: tz * l, t: 4, r: size });
   };
 
-  // ── drones keep a station ahead of the condor, weaving about it. Shooters fire; hackers
+  // ── drones keep a station ahead of the squad, weaving about it. Shooters fire; hackers
   // need a few seconds of clear signal to break in, and a roll cuts the signal
+  const rolling = crew.some((f) => f.rollT > 0);
   G.chan = 0;
   for (let i = drones.length - 1; i >= 0; i--) {
     const d = drones[i];
@@ -1293,9 +1443,9 @@ function simulate(dt) {
     d.a += (d.ta - d.a) * e;
     d.s += (d.ts - d.s) * e;
     d.u += (d.tu - d.u) * e;
-    d.x = lead.x + cfx * d.a - cfy * d.s;
-    d.y = lead.y + cfy * d.a + cfx * d.s;
-    d.z = Math.max(lead.z + d.u, groundAt(d.x, d.y) + 3);
+    d.x = sq.x + cfx * d.a - cfy * d.s;
+    d.y = sq.y + cfy * d.a + cfx * d.s;
+    d.z = Math.max(sq.z + d.u, groundAt(d.x, d.y) + 3);
     if (!play) continue;
     if (!d.k) {
       d.cd -= dt;
@@ -1304,7 +1454,7 @@ function simulate(dt) {
         shootAt(d, 0.6);
       }
     } else if (!G.hacked && G.immune <= 0 && d.a < 70) {
-      d.ch = lead.rollT > 0 ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
+      d.ch = rolling ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
       G.chan = Math.max(G.chan, d.ch);
       if (d.ch >= 1) {
         d.ch = 0;
@@ -1317,8 +1467,8 @@ function simulate(dt) {
 
   if (play) {
     G.spawnT -= dt;
-    if (G.spawnT < 0 && drones.length < Math.min(6, 2 + ((G.t / 25) | 0))) {
-      G.spawnT = Math.max(2.5, 7 - G.t / 30);
+    if (G.spawnT < 0 && drones.length < Math.min(6, 1 + n + ((G.t / 25) | 0))) {
+      G.spawnT = Math.max(2.5, 7 - G.t / 30) / n;
       spawnDrone(0);
     }
 
@@ -1327,7 +1477,7 @@ function simulate(dt) {
     if (!sat) {
       G.satT -= dt;
       if (G.satT < 0) {
-        sat = { x: lead.x + cfx * 90, y: lead.y + cfy * 90, z: 285, hp: 14, r: 4.5, cd: 3 };
+        sat = { x: sq.x + cfx * 90, y: sq.y + cfy * 90, z: 285, hp: 14, r: 4.5, cd: 3 };
         say('SATÉLITE HACKER EN LA ESTRATÓSFERA', 2.5);
       }
     } else if (sat.hp <= 0) {
@@ -1338,10 +1488,10 @@ function simulate(dt) {
       G.hackT = 20;
     } else {
       const e = 1 - Math.exp(-0.3 * dt);
-      sat.x += (lead.x + cfx * 60 - sat.x) * e;
-      sat.y += (lead.y + cfy * 60 - sat.y) * e;
+      sat.x += (sq.x + cfx * 60 - sat.x) * e;
+      sat.y += (sq.y + cfy * 60 - sat.y) * e;
       sat.cd -= dt;
-      if (sat.cd < 0 && Math.hypot(lead.x - sat.x, lead.y - sat.y, lead.z - sat.z) < 130) {
+      if (sat.cd < 0 && Math.hypot(sq.x - sat.x, sq.y - sat.y, sq.z - sat.z) < 130) {
         sat.cd = 1.3;
         shootAt(sat, 1);
       }
@@ -1352,69 +1502,32 @@ function simulate(dt) {
       }
     }
 
-    // ── laser fences across the condor's path: roll through one, or go round it
+    // ── laser fences across the squad's path: roll through one, or go round it
     G.fenceT -= dt;
-    if (G.fenceT < 0 && agl < 30 && lead.z < 100) {
+    if (G.fenceT < 0 && G.agl < 30 && sq.z < 100) {
       G.fenceT = 10 + rand() * 8;
       const off = spread() * 8;
-      const x = lead.x + sx * 130 - sy * off;
-      const y = lead.y + sy * 130 + sx * off;
-      const z = Math.max(groundAt(x, y), groundAt(x - sy * 18, y + sx * 18), groundAt(x + sy * 18, y - sx * 18)) + 2;
-      fences.push({ x, y, nx: sx, ny: sy, w: 22, z0: z, z1: z + 15, was: -1 });
+      const x = sq.x + sx * 130 + rx * off;
+      const y = sq.y + sy * 130 + sx * off;
+      const z = Math.max(groundAt(x, y), groundAt(x - rx * 18, y - sx * 18), groundAt(x + rx * 18, y + sx * 18)) + 2;
+      fences.push({ x, y, nx: sx, ny: sy, w: duo ? 34 : 22, z0: z, z1: z + 15, was: [-1, -1] });
     }
     for (let i = fences.length - 1; i >= 0; i--) {
       const f = fences[i];
-      const dx = lead.x - f.x;
-      const dy = lead.y - f.y;
-      const along = dx * f.nx + dy * f.ny;
-      if (f.was < 0 && along >= 0 && Math.abs(dy * f.nx - dx * f.ny) < f.w && lead.z > f.z0 - 1 && lead.z < f.z1 + 1) {
-        if (lead.rollT > 0) {
-          gain(250, '¡TONEL!');
-          heal(5);
-        } else hurt(22, '¡LÁSER!');
-      }
-      f.was = along;
-      if (along > 30 || along < -250) fences.splice(i, 1);
-    }
-
-    // ── the power line: the cables and the pylons are solid; slipping under the cables pays
-    const off = lead.x - lineX(lead.y);
-    const span = (lead.y - 16) / PYLON;
-    const j = Math.floor(span);
-    const fr = span - j;
-    const wire = pylonTop(j) + (pylonTop(j + 1) - pylonTop(j)) * fr - ARM - SAG * 2 * Math.min(fr, 1 - fr);
-    if (Math.abs(off) < 3.4 && Math.abs(lead.z - wire) < 0.9) hurt(18, '¡CABLES!');
-    else if (Math.abs(off) < 1.6 && (fr < 0.06 || fr > 0.94) && lead.z < wire + ARM) hurt(25, '¡TORRE!');
-    else if (off * G.side < 0 && Math.abs(off) < 3 && lead.z < wire) gain(120, 'BAJO LOS CABLES');
-    G.side = off;
-
-    // ── buildings are solid too
-    for (const t of TOWNS) {
-      const dy = lead.y - t.y - Math.round((lead.y - t.y) / N) * N; // the town's nearest self, north or south
-      if (Math.abs(lead.x - t.x) + Math.abs(dy) > 26) continue;
-      for (let o = 0; o < t.b.length; o += 6) {
-        const w = t.b[o + 4] + 0.8;
-        if (Math.abs(lead.x - t.b[o]) < w && Math.abs(dy - t.b[o + 1] + t.y) < w && lead.z < t.b[o + 2] + t.b[o + 3] + 0.3) {
-          hurt(25, '¡EDIFICIO!');
-          G.kick = 24;
+      for (const c of crew) {
+        const dx = c.x - f.x;
+        const dy = c.y - f.y;
+        const along = dx * f.nx + dy * f.ny;
+        if (f.was[c.id] < 0 && along >= 0 && Math.abs(dy * f.nx - dx * f.ny) < f.w && c.z > f.z0 - 1 && c.z < f.z1 + 1) {
+          if (c.rollT > 0) {
+            gain(250, '¡TONEL!');
+            heal(5);
+          } else hurt(c, 22, '¡LÁSER!');
         }
+        f.was[c.id] = along;
       }
-    }
-
-    // ── water: skim the sea or a river to take it on, B5 to let a load go
-    if (GR[cell(lead.x, lead.y)] <= G_SHALLOW * GS && agl < 3.5 && G.water < 3) {
-      G.fill += dt;
-      puff(lead.x, lead.y, ground + 0.3, spread() * 5 - sx * 8, spread() * 5 - sy * 8, 5 + rand() * 5, 0.5, 3, 0.8);
-      if (G.fill > 0.4) {
-        G.fill = 0;
-        G.water++;
-        say('AGUA A BORDO', 1);
-        tone(300, 600, 0.12, 'sine', 0.1);
-      }
-    }
-    if (pressed.P1_5 && G.water > 0) {
-      G.water--;
-      shots.push({ k: 2, x: lead.x, y: lead.y, z: lead.z - 1, vx: sx * spd, vy: sy * spd, vz: -4, t: 8 });
+      const gone = (sq.x - f.x) * f.nx + (sq.y - f.y) * f.ny;
+      if (gone > 30 || gone < -250) fences.splice(i, 1);
     }
 
     // ── emergencies, one at a time: a wildfire, then a mudslide, and round again
@@ -1450,7 +1563,7 @@ function simulate(dt) {
         if (rand() < dt * 14) puff(em.x + spread() * 3, em.y + spread() * 3, em.z + 1, spread() * 3, spread() * 3, 2 + rand() * 3, 1.2, 4, 1.6);
         for (let i = folk.length - 1; i >= 0; i--) {
           const f = folk[i];
-          if (Math.hypot(lead.x - f.x, lead.y - f.y) < 5 && lead.z - f.z < 7) {
+          if (crew.some((c) => Math.hypot(c.x - f.x, c.y - f.y) < 5 && c.z - f.z < 7)) {
             folk.splice(i, 1);
             em.saved++;
             gain(500, '¡RESCATADO!');
@@ -1471,40 +1584,12 @@ function simulate(dt) {
 
   // ── fires burn: flames and black smoke
   for (const f of fires) {
-    if (Math.abs(f.x - lead.x) + Math.abs(f.y - lead.y) > 260) continue;
+    if (Math.abs(f.x - sq.x) + Math.abs(f.y - sq.y) > 260) continue;
     if (rand() < dt * 9) puff(f.x + spread(), f.y + spread(), f.z + 0.5, spread(), spread(), 4 + rand() * 4, 0.6, 1, 1.3);
     if (rand() < dt * 2.5) puff(f.x, f.y, f.z + 3, 1.5 + spread(), 0.6 + spread(), 5 + rand() * 3, 2.2, 5, 1.8);
   }
 
-  // ── wingtip trails, exhaust, and everything that drifts
-  const alive = G.mode !== OVER;
-  const lift2 = (WINGTIPS[1][0] - WING_ROOT) * lead.flex;
-  modelPoint(lead, WINGTIPS[0][0], WINGTIPS[0][1], WINGTIPS[0][2] + lift2, lead.tip, 0);
-  modelPoint(lead, WINGTIPS[1][0], WINGTIPS[1][1], WINGTIPS[1][2] + lift2, lead.tip, 3);
-  if (!alive) lead.trailLen = 0;
-  else if (!lead.trailLen || Math.hypot(lead.x - lead.trailX, lead.y - lead.trailY) >= TRAIL_STEP) {
-    lead.trailHead = (lead.trailHead + 1) % TRAIL_N;
-    if (lead.trailLen < TRAIL_N) lead.trailLen++;
-    lead.trailX = lead.x;
-    lead.trailY = lead.y;
-    for (let s = 0; s < 2; s++) {
-      const o = lead.trailHead * 3;
-      lead.trail[s][o] = lead.tip[s * 3];
-      lead.trail[s][o + 1] = lead.tip[s * 3 + 1];
-      lead.trail[s][o + 2] = lead.tip[s * 3 + 2];
-    }
-  }
-  smokeClock += dt;
-  if (smokeClock > 0.035) {
-    smokeClock = 0;
-    if (alive && lead.thr > 0.6) {
-      for (const nz2 of NOZZLES) {
-        modelPoint(lead, nz2[0], nz2[1] - 6, nz2[2], puffs, puffHead * PUFF_F);
-        const o = puffHead * PUFF_F;
-        puff(puffs[o], puffs[o + 1], puffs[o + 2], -nx * 9 + spread() * 1.5, -ny * 9 + spread() * 1.5, 1 + rand() * 1.5, 0.9 + rand() * 0.6, 0, 0.5);
-      }
-    }
-  }
+  // ── everything that drifts
   const drag = Math.exp(-3 * dt);
   for (let o = 0; o < puffs.length; o += PUFF_F) {
     if (puffs[o + 6] <= 0) continue;
@@ -1521,19 +1606,19 @@ function simulate(dt) {
     if (puffs[o + 8] === 3) puffs[o + 5] -= 30 * dt; // spray falls back
   }
 
-  // ── the camera: behind the condor and a little above, swinging round after it in a turn
+  // ── the camera: behind the squad and a little above, swinging round after it in a turn
   // and trailing it for a moment when it slides sideways
-  cam.S = (P.chaseWidth * BW) / (MW * P.modelScale);
-  cam.q = 1 / (P.chaseDist * (1 + 0.16 * push) * ML * P.modelScale); // it drops back as the condor surges ahead
+  cam.S = (P.chaseWidth * BW) / (MW * P.modelScale) / (duo ? 1.25 : 1); // with two, it stands further off
+  cam.q = 1 / (P.chaseDist * (1 + 0.16 * pushes) * ML * P.modelScale); // it drops back as the squad surges ahead
   cam.k = Math.tan((P.chaseElev * Math.PI) / 180);
   cam.cy = BH * P.chaseY + spread() * G.shake * 6;
-  cam.yaw += wrapAngle(lead.yaw - cam.yaw) * (1 - Math.exp(-P.chaseFollow * dt));
+  cam.yaw += wrapAngle(sq.yaw - cam.yaw) * (1 - Math.exp(-P.chaseFollow * dt));
   const cx = Math.cos(cam.yaw);
   const cy = Math.sin(cam.yaw);
-  const aside = ((lead.x - cam.x) * cx + (lead.y - cam.y) * cy) * Math.exp(-P.chaseSlide * dt);
-  cam.x = lead.x - cx * aside;
-  cam.y = lead.y - cy * aside;
-  cam.zr = lead.z;
+  const aside = ((sq.x - cam.x) * cx + (sq.y - cam.y) * cy) * Math.exp(-P.chaseSlide * dt);
+  cam.x = sq.x - cx * aside;
+  cam.y = sq.y - cy * aside;
+  cam.zr = sq.z;
 }
 
 // ───────────────────────────────────────────────────────────── drawing
@@ -1882,8 +1967,8 @@ function drawTrails(f) {
 // One flyer. Every visible voxel is placed with the flyer's own axes and drawn as a small
 // square, nearest wins. Each is lit as part of a solid: by the sun, from the way its surface
 // faces; darker in the creases and wherever another part of the flyer stands in its light;
-// with a glint where the sun bounces towards the camera. Then a dark outline, so it reads
-// over any ground.
+// with a glint where the sun bounces towards the camera; and red from its own burners, near
+// them. Then a dark outline, so it reads over any ground.
 const LV = new Float32Array(4096); // the sun on each direction a surface can face …
 const SP = new Float32Array(4096); // … and the glint there
 const STEP = new Float32Array(9);
@@ -1916,21 +2001,19 @@ function plotVoxel(ma, mb, mc, colour, mark) {
       if (ZB[p] <= dep) continue;
       ZB[p] = dep;
       FB[p] = colour;
-      if (mark) STAMP[p] = mark;
+      STAMP[p] = mark;
     }
   }
-  if (mark) {
-    if (xa < bx0) bx0 = xa;
-    if (xb > bx1) bx1 = xb;
-    if (ya < by0) by0 = ya;
-    if (yb > by1) by1 = yb;
-  }
+  if (xa < bx0) bx0 = xa;
+  if (xb > bx1) bx1 = xb;
+  if (ya < by0) by0 = ya;
+  if (yb > by1) by1 = yb;
 }
 
 // Which of a flyer's voxels have another part of it between them and the sun. The light's
 // direction is given in the flyer's own axes: across, towards the nose, up.
 function castShadows(f, lx, ly, lz) {
-  const { n, gi, gj, gk, ni } = model;
+  const { n, gi, gj, gk, ni, grid } = f.m;
   for (let v = 0; v < n; v++) {
     const o = ni[v] * 3;
     // start just off the surface, then walk towards the sun
@@ -1940,7 +2023,7 @@ function castShadows(f, lx, ly, lz) {
     let hit = 0;
     for (let s = 0; s < 60; s++, x += lx, y -= ly, z += lz) {
       if (x < 0 || y < 0 || z < 0 || x >= GW || y >= GL || z >= GH) break;
-      if (GRID[((z | 0) * GL + (y | 0)) * GW + (x | 0)]) {
+      if (grid[((z | 0) * GL + (y | 0)) * GW + (x | 0)]) {
         hit = 1;
         break;
       }
@@ -1976,8 +2059,9 @@ function drawFlyer(f) {
   const lx = a[0] * LIGHT[0] + a[1] * LIGHT[1] + a[2] * LIGHT[2];
   const ly = a[3] * LIGHT[0] + a[4] * LIGHT[1] + a[5] * LIGHT[2];
   const lz = a[6] * LIGHT[0] + a[7] * LIGHT[1] + a[8] * LIGHT[2];
+  const { n, a: ma, b: mb, c: mc, w: mw, col, ni, ao, hot, used } = f.m;
   if (!f.shade) {
-    f.shade = new Uint8Array(model.n);
+    f.shade = new Uint8Array(n);
     f.sunZ = 9;
   }
   if (lx * f.sunX + ly * f.sunY + lz * f.sunZ < 0.9985) castShadows(f, lx, ly, lz);
@@ -1985,7 +2069,6 @@ function drawFlyer(f) {
   const hx = a[0] * eye[0] + a[1] * eye[1] + a[2] * eye[2];
   const hy = a[3] * eye[0] + a[4] * eye[1] + a[5] * eye[2];
   const hz = a[6] * eye[0] + a[7] * eye[1] + a[8] * eye[2];
-  const used = model.used;
   for (let i = 0; i < used.length; i++) {
     const q = used[i];
     const o = q * 3;
@@ -2000,15 +2083,17 @@ function drawFlyer(f) {
   bx1 = -1;
   by0 = BH;
   by1 = -1;
-  const { n, a: ma, b: mb, c: mc, w: mw, col, ni, ao } = model;
   const shade = f.shade;
   const flex = f.flex;
+  const skin = (f.id + 1) * NMAT;
+  const fire = Math.min(1, f.thr) * 210; // how brightly the burners light the tail
   for (let i = 0; i < n; i++) {
     const q = ni[i];
     const m = col[i];
     let l = shade[i] ? (0.36 + 0.1 * LV[q]) * ao[i] * 15 : (0.36 + 0.64 * LV[q]) * ao[i] * 15 + SP[q] * GLINT[m];
     if (l > NLV - 1) l = NLV - 1;
-    plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, JPAL[m * NLV + (l | 0)], id);
+    const c = JPAL[(skin + m) * NLV + (l | 0)];
+    plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, hot[i] ? mix(c, colRed, (hot[i] * fire) | 0) : c, id);
   }
 
   // outline: any free pixel that touches the flyer
@@ -2045,19 +2130,18 @@ function soft(x, y, z, r, colour, dens) {
   }
 }
 
-// The burners. Each flame is a string of soft lights from the nozzle to its tip: a blue root,
-// then white, yellow, orange and red as it cools. It grows with the throttle and leaps out in
-// a dash, it flickers, it shows shock diamonds when the burners are wide open, and in a turn
-// it trails round the inside of the curve the condor has flown.
-const HEAT = [pack(130, 180, 255), pack(255, 255, 244), pack(255, 232, 130), pack(255, 156, 56), pack(232, 74, 40)];
+// The burners. Each flame is a string of soft lights from deep in the nozzle to its tip: a
+// white-hot root, then red, darkening as it cools. It grows with the throttle and leaps out
+// in a dash, it flickers, it shows shock diamonds when the burners are wide open, and in a
+// turn it trails round the inside of the curve the flyer has flown.
+const HEAT = [pack(255, 190, 170), pack(255, 70, 76), pack(255, 30, 58), pack(206, 18, 44), pack(130, 8, 30)];
 const TIP = new Float32Array(3);
 function drawFlames(f) {
   const a = f.ax;
   const open = Math.max(0, (f.thr - 0.3) / 0.7); // 0 idling · 1 burners lit · more in a dash
-  const len = (0.9 + open * 3.6) * (1 + 0.1 * Math.sin(now * 53) + 0.06 * Math.sin(now * 31 + 2));
+  const len = (1.1 + open * 3.8) * (1 + 0.1 * Math.sin(now * 53) + 0.06 * Math.sin(now * 31 + 2));
   for (const nz of NOZZLES) {
-    modelPoint(f, nz[0], nz[1] - 1, nz[2], TIP, 0);
-    soft(TIP[0], TIP[1], TIP[2], 0.8 + open * 0.35, HEAT[3], 40 + open * 22); // its glow
+    modelPoint(f, nz[0], nz[1] + 2.5, nz[2], TIP, 0);
     for (let i = 0; i < 18; i++) {
       const t = i / 17;
       const d = t * len;
@@ -2068,18 +2152,18 @@ function drawFlames(f) {
         TIP[0] - a[3] * d + a[0] * (bend + wob),
         TIP[1] - a[4] * d + a[1] * (bend + wob),
         TIP[2] - a[5] * d + a[2] * (bend + wob) + wob,
-        (0.42 + open * 0.1) * Math.pow(1 - t, 0.6) + 0.06,
-        HEAT[t < 0.07 ? 0 : Math.min(4, 1 + ((t * (4.6 - open * 1.4)) | 0))],
-        (1 - t * 0.8) * 230 * diamond,
+        (0.4 + open * 0.08) * Math.pow(1 - t, 0.6) + 0.06,
+        HEAT[t < 0.07 ? 0 : Math.min(4, 1 + ((t * 3.6) | 0))],
+        (1 - t * 0.8) * 240 * diamond,
       );
     }
   }
 }
 
 // Everything soft and round that drifts: exhaust, flames, flashes, spray, dust, black smoke.
-const PUFF_COL = [colSmoke, 0, pack(255, 255, 255), pack(110, 180, 230), pack(150, 125, 95), pack(40, 44, 54)];
+const PUFF_COL = [pack(96, 84, 92), 0, pack(255, 255, 255), pack(110, 180, 230), pack(150, 125, 95), pack(40, 44, 54)];
 const FLAMES = [pack(255, 232, 120), pack(255, 150, 44), pack(214, 60, 30)];
-const PUFF_DENSE = [150, 235, 255, 200, 150, 190];
+const PUFF_DENSE = [110, 235, 255, 200, 150, 190];
 function drawPuffs() {
   for (let o = 0; o < puffs.length; o += PUFF_F) {
     const age = puffs[o + 6];
@@ -2182,18 +2266,18 @@ function drawThings() {
   for (const d of drones) {
     // a body with one eye that watches the condor, between two rotor pods; hackers are dark,
     // with a red eye and an aerial, and a beam on the condor while they break in
-    const dx = lead.x - d.x;
-    const dy = lead.y - d.y;
-    const dz = lead.z - d.z;
+    const dx = sq.x - d.x;
+    const dy = sq.y - d.y;
+    const dz = sq.z - d.z;
     const l = (d.r * 0.8) / Math.hypot(dx, dy, dz);
     ball(d.x, d.y, d.z, d.r, d.k ? ENGINE : HEAD);
     ball(d.x + dx * l, d.y + dy * l, d.z + dz * l, d.r * 0.45, d.k ? GLOW : PLUME, d.k);
     const bob = Math.sin(now * 14 + d.s) * 0.3;
-    ball(d.x + rgtX * d.r * 1.5, d.y + rgtY * d.r * 1.5, d.z + bob, d.r * 0.5, NAVY);
-    ball(d.x - rgtX * d.r * 1.5, d.y - rgtY * d.r * 1.5, d.z - bob, d.r * 0.5, NAVY);
+    ball(d.x + rgtX * d.r * 1.5, d.y + rgtY * d.r * 1.5, d.z + bob, d.r * 0.5, BODY);
+    ball(d.x - rgtX * d.r * 1.5, d.y - rgtY * d.r * 1.5, d.z - bob, d.r * 0.5, BODY);
     if (d.k) {
       beam(d.x, d.y, d.z + d.r, d.x, d.y, d.z + d.r + 2.5, 0.3, colRed, 255);
-      if (d.ch > 0) beam(d.x, d.y, d.z, lead.x, lead.y, lead.z, 0.5, colRed, 90 + ((d.ch * 120 + Math.sin(now * 40) * 40) | 0));
+      if (d.ch > 0) beam(d.x, d.y, d.z, sq.x, sq.y, sq.z, 0.5, colRed, 90 + ((d.ch * 120 + Math.sin(now * 40) * 40) | 0));
     }
   }
   if (sat) {
@@ -2233,13 +2317,13 @@ function drawThings() {
   }
   // towns close enough to make out
   for (const t of TOWNS) {
-    const ty = t.y + Math.round((lead.y - t.y) / N) * N - t.y; // shift to its nearest self, north or south
-    if (Math.abs(lead.x - t.x) + Math.abs(lead.y - t.y - ty) > 320) continue;
+    const ty = t.y + Math.round((sq.y - t.y) / N) * N - t.y; // shift to its nearest self, north or south
+    if (Math.abs(sq.x - t.x) + Math.abs(sq.y - t.y - ty) > 320) continue;
     for (let o = 0; o < t.b.length; o += 6) slab(t.b[o], t.b[o + 1] + ty, t.b[o + 2], t.b[o + 3], t.b[o + 4], t.b[o + 5]);
   }
   // the power line: each pylon is two legs and a crossarm, with a cable from each end of the
   // arm sagging to the next pylon
-  const j0 = Math.floor(lead.y / PYLON);
+  const j0 = Math.floor(sq.y / PYLON);
   for (let j = j0 - 7; j <= j0 + 7; j++) {
     const y = j * PYLON + 16;
     const x = lineX(y);
@@ -2262,13 +2346,13 @@ function drawThings() {
   }
 }
 
-// The gunsight: four corners round whatever the guns are tracking, or dead ahead.
-function drawSight() {
-  const t = G.lock;
-  const ok = t ? project(t.x, t.y, t.z) : project(lead.x + lead.ax[3] * 60, lead.y + lead.ax[4] * 60, lead.z + lead.ax[5] * 60);
+// A flyer's gunsight: four corners round whatever its guns are tracking, or dead ahead.
+function drawSight(f) {
+  const t = f.lock;
+  const ok = t ? project(t.x, t.y, t.z) : project(f.x + f.ax[3] * 60, f.y + f.ax[4] * 60, f.z + f.ax[5] * 60);
   if (!ok) return;
   const r = t ? Math.max(5, t.r * prM + 3) | 0 : 4;
-  const c = t ? colRed : colTrail;
+  const c = t ? colRed : f.id ? GOLD : colTrail;
   const x = prX | 0;
   const y = prY | 0;
   for (let i = 0; i < 3; i++) {
@@ -2298,11 +2382,6 @@ function glitch(amount) {
 
 // ── the panel: lettering, gauges, radar and markers, drawn straight into the picture
 
-// The lettering: capitals, five dots wide and seven tall, each row of each letter one base-32
-// digit. Accents and the tilde of the Ñ are added above the plain letter.
-const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!¡?.,:·+-/×';
-const FONT = 'ehhvhhhuhhuhhuehgggheuhhhhhuvgguggvvggugggehgnhhfhhhvhhhe44444e72222ichikokihggggggvhrllhhhhpljhhhehhhhheuhhugggehhhliduhhukihfgge11uv444444hhhhhhehhhhha4hhhllrhhha4ahhhha4444v1248gvehjlphe4c4444eeh1248vu11e11u26aiv22vgu11he68guhhev124888ehhehheehhf12c44444044044444eh1240400000cc0000c480cc0cc0000cc00044v440000v00011248gg0ha4ah0';
-const ACCENTED = 'ÁÉÍÓÚÑ';
 const INK = pack(240, 246, 255);
 const DIM = pack(168, 200, 224);
 const PANEL = pack(16, 28, 48);
@@ -2318,25 +2397,25 @@ function box(x, y, w, h, colour, alpha) {
   }
 }
 
-// align: 0 from x · 1 centred on x · 2 ending at x
+// Lettering is the engine's own text, laid over the picture. The labels are kept and used
+// again every frame; one is only redrawn when what it says, its size or its colour changes.
+const LABELS = [];
+const SIZES = [0, 15, 28, 42, 58];
+let labelN = 0;
+let scene;
+// align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
 function text(str, x, y, colour, size, align) {
-  size = size || 1;
+  let t = LABELS[labelN++];
+  if (!t) LABELS.push((t = scene.add.text(0, 0, '', { fontFamily: 'monospace', fontStyle: 'bold' })));
   str = String(str);
-  if (align) x -= ((str.length * 6 - 1) * size) >> (2 - align);
-  for (const ch of str) {
-    const a = ACCENTED.indexOf(ch);
-    const g = GLYPHS.indexOf(a < 0 ? ch : 'AEIOUN'[a]);
-    for (let r = 0; g >= 0 && r < 7; r++) {
-      const bits = parseInt(FONT[g * 7 + r], 32);
-      for (let b = 0; b < 5; b++) if (bits & (16 >> b)) box(x + b * size, y + r * size, size, size, colour);
-    }
-    if (a === 5) box(x + size, y - 2 * size, 3 * size, size, colour);
-    else if (a >= 0) {
-      box(x + 3 * size, y - 3 * size, size, size, colour);
-      box(x + 2 * size, y - 2 * size, size, size, colour);
-    }
-    x += 6 * size;
+  size = SIZES[size || 1];
+  if (t.text !== str) t.setText(str);
+  if (t.size !== size) t.setFontSize((t.size = size));
+  if (t.ink !== colour) {
+    t.ink = colour;
+    t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
   }
+  t.setOrigin((align || 0) / 2, 0.12).setPosition(x * PX, y * PX).setVisible(true);
 }
 
 function plate(x, y, w, h) {
@@ -2389,11 +2468,11 @@ function radar(cx, cy, R) {
     box(cx - w, cy + y, 2, 1, DIM, 200);
     box(cx + w - 2, cy + y, 2, 1, DIM, 200);
   }
-  const sx = Math.sin(lead.yaw);
-  const sy = -Math.cos(lead.yaw);
+  const sx = Math.sin(sq.yaw);
+  const sy = -Math.cos(sq.yaw);
   const blip = (t, colour, size) => {
-    const dx = t.x - lead.x;
-    const dy = t.y - lead.y;
+    const dx = t.x - sq.x;
+    const dy = t.y - sq.y;
     let px = ((dy * sx - dx * sy) * R) / 170;
     let py = (-(dx * sx + dy * sy) * R) / 170;
     const d = Math.hypot(px, py) / (R - 2);
@@ -2409,15 +2488,17 @@ function radar(cx, cy, R) {
   for (const s of shots) if (s.k === 1) blip(s, colRed, 1);
   for (const d of drones) blip(d, colRed, d.k ? 3 : 2);
   if (sat) blip(sat, INK, 3);
-  box(cx - 1, cy - 1, 2, 3, INK);
+  crew.forEach((f, i) => blip(f, i ? GOLD : INK, 2));
 }
 
 function drawHud() {
+  for (const t of LABELS) t.setVisible(false);
+  labelN = 0;
   if (G.mode !== PLAY) {
     box(0, 84, BW, 46, PANEL, 120);
-    text(G.mode === OVER ? 'FIN DEL VUELO' : 'CÓNDOR 3000', CXS, 94, INK, 4, 1);
+    text(G.mode === OVER ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 92, INK, 4, 1);
     if (G.mode === OVER) text('PUNTAJE ' + G.score, CXS, 144, INK, 2, 1);
-    if ((now * 2) & 1) text('PRESIONA START', CXS, 226, INK, 2, 1);
+    if ((now * 2) & 1) text('START 1: UN JUGADOR · START 2: DOS', CXS, 226, INK, 2, 1);
     text('RÉCORD ' + G.best, CXS, 248, DIM, 1, 1);
     plate(0, BH - 36, BW, 36);
     text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 27, INK, 1, 1);
@@ -2453,7 +2534,8 @@ function drawHud() {
   text('ESCUDO', rx + 4, 8, DIM);
   gauge(rx + 50, 9, 56, G.shield / 100, G.shield < 30 ? colRed : INK);
   text('IMPULSO', rx + 4, 20, DIM);
-  gauge(rx + 50, 21, 56, G.stam / 100, GOLD);
+  box(rx + 50, 21, 56, 5, PANEL, 210);
+  crew.forEach((f, i) => box(rx + 50, 21 + i * 3, 0.56 * f.stam, crew[1] ? 2 : 5, i ? GOLD : INK)); // one bar each
   text('AGUA', rx + 4, 32, DIM);
   for (let i = 0; i < 3; i++) box(rx + 50 + i * 12, 33, 9, 5, WATER, i < G.water ? 0 : 60);
 
@@ -2467,9 +2549,13 @@ function drawHud() {
   box(20, rung(G.gnd), 4, foot - rung(G.gnd), DIM);
   box(16, rung(CA), 12, 1, DIM, 140);
   box(16, rung(STRATO), 12, 1, DIM, 140);
-  box(14, rung(lead.z) - 1, 16, 2, INK);
+  crew.forEach((f, i) => box(14, rung(f.z) - 1, 16, 2, i ? GOLD : INK));
 
   radar(BW - 32, BH - 32, 27);
+  if (crew[1]) {
+    // with two aboard, each flyer wears its number
+    for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
+  } else if (G.t < 12) text('START 2: SE SUMA EL MONITO', CXS, BH - 34, DIM, 1, 1);
 
   // what is going on
   if (G.hacked) {
@@ -2487,7 +2573,7 @@ function drawHud() {
     text(G.msg, CXS, 68, INK, size, 1);
   }
   const far = goal
-    ? (folk[0] ? `ALUVIÓN · ${folk.length} POR RESCATAR` : `INCENDIO · ${fires.length} FOCOS`) + ` · ${(Math.hypot(goal.x - lead.x, goal.y - lead.y) * 10) | 0} M`
+    ? (folk[0] ? `ALUVIÓN · ${folk.length} POR RESCATAR` : `INCENDIO · ${fires.length} FOCOS`) + ` · ${(Math.hypot(goal.x - sq.x, goal.y - sq.y) * 10) | 0} M`
     : sat
       ? 'SATÉLITE HACKER EN LA ESTRATÓSFERA'
       : '';
@@ -2510,25 +2596,30 @@ function drawFrame() {
 
   nSJ = 0;
   if (alive) {
-    SJ[0] = lead.x - cam.x;
-    SJ[1] = lead.y - cam.y;
-    SJ[2] = lead.z;
-    SJ[3] = Math.cos(lead.yaw);
-    SJ[4] = Math.sin(lead.yaw);
-    SJ[5] = invMs / Math.max(0.22, Math.abs(Math.cos(lead.bank + lead.roll)));
-    nSJ = 1;
+    for (const f of crew) {
+      const o = nSJ++ * 6;
+      SJ[o] = f.x - cam.x;
+      SJ[o + 1] = f.y - cam.y;
+      SJ[o + 2] = f.z;
+      SJ[o + 3] = Math.cos(f.yaw);
+      SJ[o + 4] = Math.sin(f.yaw);
+      SJ[o + 5] = invMs / Math.max(0.22, Math.abs(Math.cos(f.bank + f.roll)));
+    }
   }
 
   drawWorld();
   drawSky();
-  if (alive && (G.inv <= 0 || (now * 12) & 1)) {
-    drawFlyer(lead); // it blinks while it is safe from harm
-    drawFlames(lead);
+  if (alive) {
+    for (const f of crew) {
+      if (f.inv > 0 && (now * 12) & 1) continue; // it blinks while it is safe from harm
+      drawFlyer(f);
+      drawFlames(f);
+    }
   }
   drawThings();
-  if (alive) drawTrails(lead);
+  if (alive) crew.forEach(drawTrails);
   drawPuffs();
-  if (G.mode === PLAY && !G.hacked) drawSight();
+  if (G.mode === PLAY && !G.hacked) crew.forEach(drawSight);
   if (G.hacked || G.chan > 0.4) glitch(G.hacked ? 1 : G.chan * 0.5);
   if (G.flash > 0.02) {
     const a = (G.flash * 200) | 0;
@@ -2568,15 +2659,19 @@ function create() {
   FB = new Uint32Array(frameData.data.buffer);
   this.add.image(0, 0, 'frame').setOrigin(0).setScale(PX);
 
+  scene = this;
   AC = this.sound.context || null;
   buildPalettes();
-  buildModel();
+  buildModel(0);
+  buildModel(1);
+  lead.m = MODELS[0];
+  mate.m = MODELS[1];
   buildWorld(P.seed);
   resetFlight();
 }
 
 function update(time, delta) {
-  if (G.mode !== PLAY && G.t > 1 && (pressed.START1 || pressed.P1_1)) startGame();
+  if (G.mode !== PLAY && G.t > 1 && (pressed.START1 || pressed.START2 || pressed.P1_1)) startGame(pressed.START2);
 
   simulate(Math.min(delta / 1000, 0.05));
   const t0 = performance.now();
