@@ -875,6 +875,9 @@ const folk = []; // people waiting for rescue
 const fences = [];
 let sat = null; // the hackers' satellite
 let em = null; // the emergency under way: k 0 a wildfire, 1 a mudslide
+const ROPE = 4; // how far below a flyer its water bucket hangs
+let wet = null; // while there is a fire and no water aboard: the nearest water, and when it was looked for
+let wetT = 0;
 const QUEB = []; // cells in the ravines of the cordillera, where mudslides start
 
 // The crew talk: Darwin (0) and the monito (1) tell the story and say what to do. Lines wait
@@ -1135,13 +1138,23 @@ function light(x, y) {
 }
 
 // A wildfire: a few fires that spread until they are put out with water from the sea or a river.
+// The sea or river nearest the crew: rings of places, further and further out.
+function findWater() {
+  for (let r = 6; r < 500; r += 6) {
+    for (let a = r; a < r + 6; a += 0.4) {
+      const x = sq.x + Math.sin(a) * r;
+      const y = sq.y - Math.cos(a) * r;
+      if (x > 4 && x < N - 4 && GR[cell(x, y)] <= G_SHALLOW * GS) return { x, y, z: groundAt(x, y) };
+    }
+  }
+}
 function startFire() {
   const at = landNear(110, 260, GREEN);
   if (!at) return false;
   for (let i = 0; i < 5; i++) light(at[0] + spread() * 8, at[1] + spread() * 8);
   em = { k: 0, t: 0 };
   say('¡INCENDIO!');
-  tell(1, '¡INCENDIO! CARGA AGUA VOLANDO RASANTE\nSOBRE EL MAR O UN RÍO Y SUÉLTALA CON B5.', 8);
+  tell(1, '¡INCENDIO! SIGUE LA FLECHA AL AGUA, MOJA EL\nBALDE Y SUÉLTALA SOBRE EL FUEGO CON B5.', 8);
   return true;
 }
 
@@ -1428,21 +1441,23 @@ function simulate(dt) {
         }
       }
 
-      // water: skim the sea or a river to take it on, B5 to let a load go
-      if (GR[cell(f.x, f.y)] <= G_SHALLOW * GS && f.agl < 3.5 && G.water < 3) {
-        G.fill += dt;
-        puff(f.x, f.y, ground + 0.3, spread() * 5 - sx * 8, spread() * 5 - sy * 8, 5 + rand() * 5, 0.5, 3, 0.8);
-        if (G.fill > 0.4) {
-          G.fill = 0;
-          G.water++;
-          say('AGUA A BORDO', 1);
-          tone(300, 600, 0.12, 'sine', 0.1);
-        }
+      // water: each flyer hangs a bucket on a line, as helicopters do. Dip it in the sea or a
+      // river to fill it, B5 to let a load go
+      if (GR[cell(f.x, f.y)] <= G_SHALLOW * GS && G.water < 3) {
+        if (f.agl < ROPE + 0.5) {
+          G.fill += dt;
+          puff(f.x - sx * 2, f.y - sy * 2, ground + 0.3, spread() * 5 - sx * 8, spread() * 5 - sy * 8, 5 + rand() * 5, 0.5, 3, 0.8);
+          if (G.fill > 0.3) {
+            G.fill = 0;
+            say('AGUA EN EL BALDE ' + ++G.water + '/3', 1);
+            tone(300, 600, 0.12, 'sine', 0.1);
+          }
+        } else if (fires[0] && f.agl < 40) say('BAJA MÁS: EL BALDE DEBE TOCAR EL AGUA', 0.3);
       }
       if (pressed[f.key + '5'] && G.water > 0) {
         G.water--;
         burst(0.3, 0.08, 0, 1.5);
-        shots.push({ k: 2, x: f.x, y: f.y, z: f.z - 1, vx: sx * spd, vy: sy * spd, vz: -4, t: 8 });
+        shots.push({ k: 2, x: f.x, y: f.y, z: f.z - ROPE, vx: sx * spd, vy: sy * spd, vz: -4, t: 8 });
       }
     }
 
@@ -1635,6 +1650,13 @@ function simulate(dt) {
       }
       const gone = (sq.x - f.x) * f.nx + (sq.y - f.y) * f.ny;
       if (gone > 30 || gone < -250) fences.splice(i, 1);
+    }
+
+    // with a fire burning and the buckets dry, the crew is shown the way to the nearest water
+    if (!fires[0] || G.water) wet = null;
+    else if (now > wetT) {
+      wetT = now + 0.4;
+      wet = findWater();
     }
 
     // ── emergencies, one at a time: a wildfire, then a mudslide, and round again
@@ -2380,6 +2402,17 @@ function drawThings() {
   // a tall light over wherever help is needed
   const goal = folk[0] || fires[0];
   if (goal) beam(goal.x, goal.y, goal.z + 30, goal.x, goal.y, goal.z + 150, 1.2, folk[0] ? colTrail : colFire, 80);
+  if (wet) beam(wet.x, wet.y, wet.z + 8, wet.x, wet.y, wet.z + 150, 1.2, WATER, 110);
+  if (G.mode === PLAY && (fires[0] || G.water)) {
+    // the buckets: orange when empty, blue with water in them, trailing a little behind
+    for (const f of crew) {
+      const x = f.x - Math.sin(f.yaw) * 2;
+      const y = f.y + Math.cos(f.yaw) * 2;
+      const z = Math.max(groundAt(x, y) + 0.5, f.z - ROPE);
+      beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
+      ball(x, y, z, 0.55, G.water ? GLASS : FIRE);
+    }
+  }
 
   for (const f of fences) {
     const px = -f.ny * f.w; // from the middle of the fence to a pylon
@@ -2526,36 +2559,51 @@ function gauge(x, y, w, share, colour) {
   box(x, y, w * clamp(share, 0, 1), 5, colour);
 }
 
+// A name plate: what a mark is, and what to do about it.
+function tag(str, x, y, colour) {
+  const w = str.length * 4.6 + 6;
+  x = clamp(x, w / 2 + 2, BW - w / 2 - 2);
+  y = clamp(y, 2, BH - 13);
+  plate(x - w / 2, y, w, 11);
+  text(str, x, y + 2, colour, 1, 1);
+}
+
 // A mark for something the pilot cannot see: an arrowhead at the edge of the screen when it is
-// out of view, a small frame where it is when it is in view but behind a hill or a cloud.
-function mark(x, y, z, colour) {
+// out of view, a small frame where it is when it is in view but behind a hill or a cloud. Each
+// carries its name plate. A place to go to (`always`) is marked even in plain sight, and says
+// how far it is.
+function mark(x, y, z, colour, label, always) {
   const dx = x - cam.x;
   const dy = y - cam.y;
   const v = dx * fwdX + dy * fwdY;
   const u = dx * rgtX + dy * rgtY;
   const w = 1 + cam.q * v;
+  if (always) label += ' ' + ((Math.hypot(dx, dy) / 5) | 0) * 50 + ' M';
   let sx = CXS + u * 1e3; // behind the camera: it comes in from below
   let sy = BH * 3;
   if (w > 0.15) {
     sx = CXS + (cam.S / w) * u;
     sy = cam.cy - (cam.S / w) * (z - cam.zr + cam.k * v);
     if (sx > 8 && sx < BW - 8 && sy > 8 && sy < BH - 8) {
-      if (ZB[(sy | 0) * BW + (sx | 0)] < v - 3) {
+      if (always || ZB[(sy | 0) * BW + (sx | 0)] < v - 3) {
         for (let i = 0; i < 4; i++) box(sx + (i & 1 ? 3 : -4), sy + (i & 2 ? 3 : -4), 2, 2, colour);
+        tag(label, sx, sy - 18, colour);
       }
       return;
     }
   }
   const ex = sx - CXS;
   const ey = sy - BH / 2;
-  const side = Math.abs(ex) * (BH / 2 - 9) > Math.abs(ey) * (CXS - 9); // it leaves by the left or right edge
-  const k = side ? (CXS - 9) / Math.abs(ex) : (BH / 2 - 9) / Math.abs(ey);
+  const side = Math.abs(ex) * (BH / 2 - 24) > Math.abs(ey) * (CXS - 9); // it leaves by the left or right edge
+  const k = side ? (CXS - 9) / Math.abs(ex) : (BH / 2 - 24) / Math.abs(ey);
   const px = CXS + ex * k;
   const py = BH / 2 + ey * k;
   for (let i = 0; i < 6; i++) {
     if (side) box(px - Math.sign(ex) * i, py - i, 1, 2 * i + 1, colour);
     else box(px - i, py - Math.sign(ey) * i, 2 * i + 1, 1, colour);
   }
+  if (side) tag(label, px - Math.sign(ex) * (label.length * 2.3 + 12), py - 5, colour);
+  else tag(label, px, py - Math.sign(ey) * 13 - 5, colour);
 }
 
 // The radar: what is around the condor, nose up.
@@ -2612,12 +2660,7 @@ function drawHud() {
     return;
   }
 
-  // marks for what cannot be seen
-  for (const d of drones) mark(d.x, d.y, d.z, colRed);
-  for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed);
-  if (sat) mark(sat.x, sat.y, sat.z, INK);
   const goal = folk[0] || fires[0];
-  if (goal) mark(goal.x, goal.y, goal.z + 4, folk[0] ? INK : colFire);
   if (G.shield < 30 && (now * 4) & 1) {
     // little shield left: the frame flashes
     box(0, 0, BW, 3, colRed);
@@ -2661,7 +2704,7 @@ function drawHud() {
   if (crew[1]) {
     // with two aboard, each flyer wears its number
     for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
-  } else if (!talk[1] && G.t < 40) text('START 2: SE SUMA EL MONITO', CXS, BH - 34, DIM, 1, 1);
+  } else if (!talk[1] && !goal && G.t < 40) text('START 2: SE SUMA EL MONITO', CXS, BH - 34, DIM, 1, 1);
 
   // what is going on
   if (G.hacked) {
@@ -2679,11 +2722,13 @@ function drawHud() {
     plate(CXS - w / 2, 62, w, 10 + size * 8);
     text(G.msg, CXS, 68, INK, size, 1);
   }
-  const far = goal
-    ? (folk[0] ? `ALUVIÓN · ${folk.length} POR RESCATAR` : `INCENDIO · ${fires.length} FOCOS`) + ` · ${(Math.hypot(goal.x - sq.x, goal.y - sq.y) * 10) | 0} M`
-    : sat
-      ? 'SATÉLITE HACKER EN LA ESTRATÓSFERA'
-      : '';
+  const far = folk[0]
+    ? `ALUVIÓN · ${folk.length} POR RESCATAR: PASA BAJITO SOBRE CADA BALIZA`
+    : goal
+      ? `INCENDIO · ${fires.length} FOCOS: ` + (G.water ? 'SUELTA EL AGUA ENCIMA CON B5' : 'MOJA EL BALDE EN EL MAR O UN RÍO')
+      : sat
+        ? 'SATÉLITE HACKER EN LA ESTRATÓSFERA: SUBE Y DISPARA'
+        : '';
   if (talk[1]) {
     // whoever is talking, and the line as far as it has been said
     plate(46, BH - 74, 296, 52);
@@ -2692,9 +2737,17 @@ function drawHud() {
     text(talk[1].slice(0, talkT * 40), 110, BH - 58, INK);
   }
   if (far) {
-    plate(CXS - 116, BH - 18, 232, 14);
+    plate(CXS - far.length * 2.3 - 6, BH - 18, far.length * 4.6 + 12, 14);
     text(far, CXS, BH - 14, INK, 1, 1);
   }
+
+  // marks, over everything else: what cannot be seen and where to go, each with what to do
+  for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : 'DRON');
+  for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed, 'LÁSER: TONEL');
+  if (sat) mark(sat.x, sat.y, sat.z, INK, 'SATÉLITE: SUBE', 1);
+  if (folk[0]) mark(goal.x, goal.y, goal.z + 4, INK, 'RESCATE: PASA BAJITO', 1);
+  else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, G.water ? 'FUEGO: SUELTA B5' : 'FUEGO', G.water);
+  if (wet) mark(wet.x, wet.y, wet.z + 3, INK, 'AGUA: MOJA EL BALDE', 1);
 }
 
 function drawFrame() {
