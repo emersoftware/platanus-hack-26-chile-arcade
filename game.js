@@ -2444,34 +2444,22 @@ function text(str, x, y, colour, size, align) {
   t.setOrigin((align || 0) / 2, 0.12).setPosition(x * PX, y * PX).setVisible(true);
 }
 
-// The crew's portraits, in pixel art: Darwin the frog and the monito del monte, face on. Each
-// is drawn from its left half (12 dots a row, 22 rows; a letter is a colour, a dot is nothing)
-// and mirrored.
+// The crew's portraits, in pixel art, both in profile: Darwin's frog — a leaf-green back with
+// a pale edge, a dark stripe through a golden eye, a snout drawn out to a point — and the
+// monito del monte — big black eyes in a dark ring, round pink ears, a pink nose. Each is 28
+// dots by 24, row after row: a letter is a colour, a dot is nothing, and a number after
+// either repeats it.
 const FACES = [
-  '...............kkkkk......kGgggGk....kGgyyyygk...kgyykkyygkl.kgyykkyygkl.kGgyyyyggllkkGggggggglwkGGgggggggllkGggggggggglkGggggggggklkGggggggggggkkGggggggggg.kkkkkkkkkkk.kcccccccccc..kccckkcccc..kcckkkcccc...kccccckkc....kkcccccc......kkkkkk...nnnnnnnnn..nnnnnnnnnn',
-  '..............kkkk.......kffffk.....kfppppfk....kfppppfkkkkkkfpppfffffff.kfpffffffff.kffffddddff.kfffdkkkkdf.kffdkkwkkkd.kffdkkkkkkd.kfffdkkkkdc.kffffddddcc.kfffffccccc..kffffccccp..kfffcccccp...kffccccck...kkfcccckk.....kkccccc.......kkkkk...nnnnnnnnn..nnnnnnnnnn',
-];
-const FACE_INK = 'kGglwycnfdp';
-const FACE_COL = [
-  pack(14, 20, 22),
-  pack(36, 104, 48),
-  pack(96, 190, 84),
-  pack(164, 224, 116),
-  pack(255, 255, 255),
-  pack(236, 186, 60),
-  pack(240, 240, 198),
-  pack(42, 69, 96),
-  pack(158, 134, 114),
-  pack(60, 44, 40),
-  pack(244, 150, 172),
-];
-function face(who, x, y, size) {
-  for (let i = 0; i < 264; i++) {
+  '.61k6.21kl6k5.15klg6l5k4.10klgG6g5l4k2.8kc8Gg10k5.3kB8c8g8k.2kB16c8g.2kb8B5y3B8c.2kb12ywk2yB2o4Bk.2kb12yk3yb2o4k.3kb3Bb4Bb3yk3ybo3k2.4kbBb2Bb6Bby3o3k2.6kb9Bb3o5k.8ko7b3o6k2.9ko2Bo10k3.11ko5Bo4k3.14ko7k3.16k2o7k3.15kN12k2.13kn14k.12kn14k.12kn14k.12',
+  '.4k2Fk2.7k4.11kF5k.5kF4k.9kF2p3F2k.3kF2p2F2k.7kF2p5F2k4Fp4Fk.7kF2p3PpFf6p4Fk.7kF2p2Pt9f3Fk.9kFp2t12f2k.9kF2t10d4f2k.9kFft8dk4df2k.8kF2f2t5dw2k3d2fk.7kF3f7dwk5df2k.6kF3f7dk6d2fk3.4kF3f7dk4Nd4p3k.3kF3f7d2k4d3p3Pk.3kF3f8d5m4P2pk.4kF2f3m16k.5kF2f2m11k4mk.7kf2m15k2.9km14k2.7k6m12k.8kN17k2.8kn19k.7kn19k.7kn19k.7',
+].map((s) => s.replace(/(\D)(\d+)/g, (m, c, n) => c.repeat(n)));
+const FACE_INK = 'BFGNPbcdfgklmnoptwy';
+const FACE_COL = '542e207a4e324292364a6a8ac86882a05c32ece4b4261a18b07a4c76c4480e1416b2e470f8f0e02a4560ce8648f496aad8b07effffffe8be54'.match(/.{6}/g).map((h) => pack(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4), 16)));
+// `flip` turns it to face left
+function face(who, x, y, size, flip) {
+  for (let i = 0; i < 672; i++) {
     const c = FACE_INK.indexOf(FACES[who][i]);
-    if (c < 0) continue;
-    const row = y + ((i / 12) | 0) * size;
-    box(x + (i % 12) * size, row, size, size, FACE_COL[c]);
-    box(x + (23 - (i % 12)) * size, row, size, size, FACE_COL[c]);
+    if (c >= 0) box(x + (flip ? 27 - (i % 28) : i % 28) * size, y + ((i / 28) | 0) * size, size, size, FACE_COL[c]);
   }
 }
 
@@ -2557,10 +2545,10 @@ function drawHud() {
     if (G.mode === OVER) text('PUNTAJE ' + G.score, CXS, 144, INK, 2, 1);
     text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 136, INK, 1, 1);
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 147, DIM, 1, 1);
-    face(0, 18, 160, 3);
-    face(1, BW - 90, 160, 3);
-    text('DARWIN', 54, 228, GOLD, 1, 1);
-    text('MONITO', BW - 54, 228, GOLD, 1, 1);
+    face(0, 10, 158, 3);
+    face(1, BW - 94, 158, 3, 1);
+    text('DARWIN', 52, 230, GOLD, 1, 1);
+    text('MONITO', BW - 52, 230, GOLD, 1, 1);
     if ((now * 2) & 1) text('START 1: UN JUGADOR · START 2: DOS', CXS, 240, INK, 2, 1);
     text('RÉCORD ' + G.best, CXS, 258, DIM, 1, 1);
     plate(0, BH - 36, BW, 36);
@@ -2642,10 +2630,10 @@ function drawHud() {
       : '';
   if (talk[1]) {
     // whoever is talking, and the line as far as it has been said
-    plate(46, BH - 72, 296, 50);
-    face(talk[0], 50, BH - 70, 2);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 104, BH - 68, GOLD);
-    text(talk[1].slice(0, talkT * 40), 104, BH - 57, INK);
+    plate(46, BH - 74, 296, 52);
+    face(talk[0], 48, BH - 72, 2);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 110, BH - 69, GOLD);
+    text(talk[1].slice(0, talkT * 40), 110, BH - 58, INK);
   }
   if (far) {
     plate(CXS - 116, BH - 18, 232, 14);
