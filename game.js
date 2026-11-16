@@ -324,7 +324,6 @@ const GLINT = [0, 4, 5, 6, 12, 3, 0, 0, 1]; // how strongly each catches a highl
 const NLIT = 16;
 const NLV = 24;
 const JPAL = new Uint32Array(MATERIALS.length * NLV);
-const FLAME = [RAMP[WHITE], REDS[2], REDS[1], REDS[0]].map((c) => pack(c[0], c[1], c[2]));
 const colOutline = pack(RAMP[0][0], RAMP[0][1], RAMP[0][2]);
 const colTrail = pack(255, 255, 255);
 const colSmoke = pack(RAMP[47][0], RAMP[47][1], RAMP[47][2]);
@@ -784,6 +783,11 @@ const G = {
   inv: 0, // seconds of safety after a hit
   kick: 0, // the bounce off the ground
   fireCd: 0,
+  stam: 100, // boost left for the burners
+  dash: 0, // seconds of dash still to run
+  rest: 0,
+  agl: 0, // height above the ground, and the ground's height, for the panel
+  gnd: 0,
   water: 0, // loads of water aboard
   fill: 0,
   hacked: 0,
@@ -928,7 +932,7 @@ function resetFlight() {
 }
 
 function startGame() {
-  Object.assign(G, { mode: PLAY, t: 0, score: 0, mult: 1, low: 0, shield: 100, inv: 2, kick: 0, water: 0, hacked: 0, purge: 0, chan: 0, immune: 0, spawnT: 4, hackT: 20, fenceT: 9, emT: 10, emN: 0, satT: 14, flash: 0, side: 0 });
+  Object.assign(G, { mode: PLAY, t: 0, score: 0, mult: 1, low: 0, shield: 100, inv: 2, kick: 0, stam: 100, dash: 0, water: 0, hacked: 0, purge: 0, chan: 0, immune: 0, spawnT: 4, hackT: 20, fenceT: 9, emT: 10, emN: 0, satT: 14, flash: 0, side: 0 });
   drones.length = shots.length = fires.length = folk.length = fences.length = 0;
   sat = em = null;
   lead.z = Math.max(lead.z, groundAt(lead.x, lead.y) + 20);
@@ -1100,7 +1104,24 @@ function simulate(dt) {
   }
   lead.turn += (turn - lead.turn) * (1 - Math.exp(-6 * dt));
   lead.lift += (lift - lead.lift) * (1 - Math.exp(-5 * dt));
-  lead.thr += ((play && held.P1_4 ? 1 : 0.3) - lead.thr) * (1 - Math.exp(-4 * dt));
+  // B4: a dash throws the condor forward, and holding it keeps the burners lit — for as long
+  // as there is boost left. Boost comes back once the burners have been off for a moment.
+  let burn = 0.3;
+  if (play) {
+    if (pressed.P1_4 && G.stam > 18) {
+      G.dash = 0.4;
+      G.stam -= 18;
+      burst(0.35, 0.2);
+    }
+    if (held.P1_4 && G.stam > 0) {
+      burn = 1;
+      G.stam = Math.max(0, G.stam - dt * 24);
+      G.rest = 0.6;
+    } else if (!held.P1_4 && (G.rest -= dt) < 0) G.stam = Math.min(100, G.stam + dt * 18);
+  }
+  G.dash -= dt;
+  if (G.dash > 0) burn = 1.9;
+  lead.thr += (burn - lead.thr) * (1 - Math.exp((G.dash > 0 ? -16 : -4) * dt));
   const push = Math.max(0, (lead.thr - 0.3) / 0.7);
   const spd = P.speed * (1 + (P.boost - 1) * push);
 
@@ -1115,6 +1136,7 @@ function simulate(dt) {
 
   // the ground is solid: hitting it costs shield and throws the condor back up
   let agl = lead.z - ground;
+  G.gnd = ground;
   if (agl < 1) {
     lead.z = ground + 1;
     agl = 1;
@@ -1122,6 +1144,7 @@ function simulate(dt) {
     G.low = 0;
     hurt(30, '¡CHOQUE!');
   }
+  G.agl = agl;
   // flying low multiplies every reward
   if (play) {
     G.low = agl < 8 ? Math.min(10, G.low + dt) : Math.max(0, G.low - dt * 4);
@@ -1501,7 +1524,7 @@ function simulate(dt) {
   // ── the camera: behind the condor and a little above, swinging round after it in a turn
   // and trailing it for a moment when it slides sideways
   cam.S = (P.chaseWidth * BW) / (MW * P.modelScale);
-  cam.q = 1 / (P.chaseDist * ML * P.modelScale);
+  cam.q = 1 / (P.chaseDist * (1 + 0.16 * push) * ML * P.modelScale); // it drops back as the condor surges ahead
   cam.k = Math.tan((P.chaseElev * Math.PI) / 180);
   cam.cy = BH * P.chaseY + spread() * G.shake * 6;
   cam.yaw += wrapAngle(lead.yaw - cam.yaw) * (1 - Math.exp(-P.chaseFollow * dt));
@@ -1860,7 +1883,7 @@ function drawTrails(f) {
 // square, nearest wins. Each is lit as part of a solid: by the sun, from the way its surface
 // faces; darker in the creases and wherever another part of the flyer stands in its light;
 // with a glint where the sun bounces towards the camera. Then a dark outline, so it reads
-// over any ground, and the flames.
+// over any ground.
 const LV = new Float32Array(4096); // the sun on each direction a surface can face …
 const SP = new Float32Array(4096); // … and the glint there
 const STEP = new Float32Array(9);
@@ -2002,23 +2025,53 @@ function drawFlyer(f) {
       }
     }
   }
+}
 
-  // thruster flames: a flickering cone of hot voxels behind each nozzle
-  fHalf = Math.max(0.5, s * 0.71);
-  const tick = (now * 30) | 0;
-  const len = 2 + f.thr * 11 + Math.sin(now * 47 + f.x) * 0.8;
+// Something soft and round at a place in the world: `r` across, `dens` thick at its middle.
+function soft(x, y, z, r, colour, dens) {
+  if (!project(x, y, z)) return;
+  r *= prM;
+  const x0 = Math.max(0, Math.floor(prX - r));
+  const x1 = Math.min(BW - 1, Math.ceil(prX + r));
+  const y0 = Math.max(0, Math.floor(prY - r));
+  const y1 = Math.min(BH - 1, Math.ceil(prY + r));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const dd = ((x - prX) * (x - prX) + (y - prY) * (y - prY)) / (r * r);
+      if (dd > 1) continue;
+      const p = y * BW + x;
+      if (ZB[p] > prV) FB[p] = mix(FB[p], colour, (dens * (1 - dd)) | 0);
+    }
+  }
+}
+
+// The burners. Each flame is a string of soft lights from the nozzle to its tip: a blue root,
+// then white, yellow, orange and red as it cools. It grows with the throttle and leaps out in
+// a dash, it flickers, it shows shock diamonds when the burners are wide open, and in a turn
+// it trails round the inside of the curve the condor has flown.
+const HEAT = [pack(130, 180, 255), pack(255, 255, 244), pack(255, 232, 130), pack(255, 156, 56), pack(232, 74, 40)];
+const TIP = new Float32Array(3);
+function drawFlames(f) {
+  const a = f.ax;
+  const open = Math.max(0, (f.thr - 0.3) / 0.7); // 0 idling · 1 burners lit · more in a dash
+  const len = (0.9 + open * 3.6) * (1 + 0.1 * Math.sin(now * 53) + 0.06 * Math.sin(now * 31 + 2));
   for (const nz of NOZZLES) {
-    for (let t = 0; t < len; t += 0.8) {
-      const along = t / len;
-      const r = 1.7 * (1 - along * 0.85);
-      for (let da = -2; da <= 2; da++) {
-        for (let dc = -2; dc <= 2; dc++) {
-          const dd = (da * da + dc * dc) / (r * r);
-          if (dd > 1) continue;
-          const heat = along * 2.6 + dd * 1.2 + (hash2(da + ((t * 5) | 0), dc, tick) & 3) * 0.2;
-          plotVoxel(nz[0] + da, nz[1] - t, nz[2] + dc, FLAME[heat > 3 ? 3 : heat | 0], 0);
-        }
-      }
+    modelPoint(f, nz[0], nz[1] - 1, nz[2], TIP, 0);
+    soft(TIP[0], TIP[1], TIP[2], 0.8 + open * 0.35, HEAT[3], 40 + open * 22); // its glow
+    for (let i = 0; i < 18; i++) {
+      const t = i / 17;
+      const d = t * len;
+      const bend = f.turn * d * d * 0.09;
+      const wob = Math.sin(now * 37 + i * 1.7 + nz[0]) * t * 0.08 * (1 + open);
+      const diamond = open > 0.6 ? 0.75 + 0.25 * Math.sin(d * 5 - now * 26) : 1;
+      soft(
+        TIP[0] - a[3] * d + a[0] * (bend + wob),
+        TIP[1] - a[4] * d + a[1] * (bend + wob),
+        TIP[2] - a[5] * d + a[2] * (bend + wob) + wob,
+        (0.42 + open * 0.1) * Math.pow(1 - t, 0.6) + 0.06,
+        HEAT[t < 0.07 ? 0 : Math.min(4, 1 + ((t * (4.6 - open * 1.4)) | 0))],
+        (1 - t * 0.8) * 230 * diamond,
+      );
     }
   }
 }
@@ -2030,24 +2083,10 @@ const PUFF_DENSE = [150, 235, 255, 200, 150, 190];
 function drawPuffs() {
   for (let o = 0; o < puffs.length; o += PUFF_F) {
     const age = puffs[o + 6];
-    if (age <= 0 || !project(puffs[o], puffs[o + 1], puffs[o + 2])) continue;
+    if (age <= 0) continue;
     const life = age / puffs[o + 7];
     const kind = puffs[o + 8];
-    const r = puffs[o + 9] * (0.5 + life * 1.5) * prM;
-    const colour = kind === 1 ? FLAMES[(life * 3) | 0] : PUFF_COL[kind];
-    const dens = (1 - life) * PUFF_DENSE[kind];
-    const x0 = Math.max(0, Math.floor(prX - r));
-    const x1 = Math.min(BW - 1, Math.ceil(prX + r));
-    const y0 = Math.max(0, Math.floor(prY - r));
-    const y1 = Math.min(BH - 1, Math.ceil(prY + r));
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const dd = ((x - prX) * (x - prX) + (y - prY) * (y - prY)) / (r * r);
-        if (dd > 1) continue;
-        const p = y * BW + x;
-        if (ZB[p] > prV) FB[p] = mix(FB[p], colour, (dens * (1 - dd)) | 0);
-      }
-    }
+    soft(puffs[o], puffs[o + 1], puffs[o + 2], puffs[o + 9] * (0.5 + life * 1.5), kind === 1 ? FLAMES[(life * 3) | 0] : PUFF_COL[kind], (1 - life) * PUFF_DENSE[kind]);
   }
 }
 
@@ -2257,6 +2296,207 @@ function glitch(amount) {
   }
 }
 
+// ── the panel: lettering, gauges, radar and markers, drawn straight into the picture
+
+// The lettering: capitals, five dots wide and seven tall, each row of each letter one base-32
+// digit. Accents and the tilde of the Ñ are added above the plain letter.
+const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!¡?.,:·+-/×';
+const FONT = 'ehhvhhhuhhuhhuehgggheuhhhhhuvgguggvvggugggehgnhhfhhhvhhhe44444e72222ichikokihggggggvhrllhhhhpljhhhehhhhheuhhugggehhhliduhhukihfgge11uv444444hhhhhhehhhhha4hhhllrhhha4ahhhha4444v1248gvehjlphe4c4444eeh1248vu11e11u26aiv22vgu11he68guhhev124888ehhehheehhf12c44444044044444eh1240400000cc0000c480cc0cc0000cc00044v440000v00011248gg0ha4ah0';
+const ACCENTED = 'ÁÉÍÓÚÑ';
+const INK = pack(240, 246, 255);
+const DIM = pack(168, 200, 224);
+const PANEL = pack(16, 28, 48);
+const GOLD = pack(255, 214, 90);
+const WATER = pack(110, 180, 230);
+
+function box(x, y, w, h, colour, alpha) {
+  const x0 = Math.max(0, x | 0);
+  const x1 = Math.min(BW, (x + w) | 0);
+  const y1 = Math.min(BH, (y + h) | 0);
+  for (let py = Math.max(0, y | 0); py < y1; py++) {
+    for (let p = py * BW + x0, e = py * BW + x1; p < e; p++) FB[p] = alpha ? mix(FB[p], colour, alpha) : colour;
+  }
+}
+
+// align: 0 from x · 1 centred on x · 2 ending at x
+function text(str, x, y, colour, size, align) {
+  size = size || 1;
+  str = String(str);
+  if (align) x -= ((str.length * 6 - 1) * size) >> (2 - align);
+  for (const ch of str) {
+    const a = ACCENTED.indexOf(ch);
+    const g = GLYPHS.indexOf(a < 0 ? ch : 'AEIOUN'[a]);
+    for (let r = 0; g >= 0 && r < 7; r++) {
+      const bits = parseInt(FONT[g * 7 + r], 32);
+      for (let b = 0; b < 5; b++) if (bits & (16 >> b)) box(x + b * size, y + r * size, size, size, colour);
+    }
+    if (a === 5) box(x + size, y - 2 * size, 3 * size, size, colour);
+    else if (a >= 0) {
+      box(x + 3 * size, y - 3 * size, size, size, colour);
+      box(x + 2 * size, y - 2 * size, size, size, colour);
+    }
+    x += 6 * size;
+  }
+}
+
+function plate(x, y, w, h) {
+  box(x, y, w, h, PANEL, 150);
+  box(x, y, w, 1, DIM, 110);
+}
+
+function gauge(x, y, w, share, colour) {
+  box(x, y, w, 5, PANEL, 210);
+  box(x, y, w * clamp(share, 0, 1), 5, colour);
+}
+
+// A mark for something the pilot cannot see: an arrowhead at the edge of the screen when it is
+// out of view, a small frame where it is when it is in view but behind a hill or a cloud.
+function mark(x, y, z, colour) {
+  const dx = x - cam.x;
+  const dy = y - cam.y;
+  const v = dx * fwdX + dy * fwdY;
+  const u = dx * rgtX + dy * rgtY;
+  const w = 1 + cam.q * v;
+  let sx = CXS + u * 1e3; // behind the camera: it comes in from below
+  let sy = BH * 3;
+  if (w > 0.15) {
+    sx = CXS + (cam.S / w) * u;
+    sy = cam.cy - (cam.S / w) * (z - cam.zr + cam.k * v);
+    if (sx > 8 && sx < BW - 8 && sy > 8 && sy < BH - 8) {
+      if (ZB[(sy | 0) * BW + (sx | 0)] < v - 3) {
+        for (let i = 0; i < 4; i++) box(sx + (i & 1 ? 3 : -4), sy + (i & 2 ? 3 : -4), 2, 2, colour);
+      }
+      return;
+    }
+  }
+  const ex = sx - CXS;
+  const ey = sy - BH / 2;
+  const side = Math.abs(ex) * (BH / 2 - 9) > Math.abs(ey) * (CXS - 9); // it leaves by the left or right edge
+  const k = side ? (CXS - 9) / Math.abs(ex) : (BH / 2 - 9) / Math.abs(ey);
+  const px = CXS + ex * k;
+  const py = BH / 2 + ey * k;
+  for (let i = 0; i < 6; i++) {
+    if (side) box(px - Math.sign(ex) * i, py - i, 1, 2 * i + 1, colour);
+    else box(px - i, py - Math.sign(ey) * i, 2 * i + 1, 1, colour);
+  }
+}
+
+// The radar: what is around the condor, nose up.
+function radar(cx, cy, R) {
+  for (let y = -R; y <= R; y++) {
+    const w = Math.round(Math.sqrt(R * R - y * y));
+    box(cx - w, cy + y, 2 * w, 1, PANEL, 150);
+    box(cx - w, cy + y, 2, 1, DIM, 200);
+    box(cx + w - 2, cy + y, 2, 1, DIM, 200);
+  }
+  const sx = Math.sin(lead.yaw);
+  const sy = -Math.cos(lead.yaw);
+  const blip = (t, colour, size) => {
+    const dx = t.x - lead.x;
+    const dy = t.y - lead.y;
+    let px = ((dy * sx - dx * sy) * R) / 170;
+    let py = (-(dx * sx + dy * sy) * R) / 170;
+    const d = Math.hypot(px, py) / (R - 2);
+    if (d > 1) {
+      px /= d;
+      py /= d;
+    }
+    box(cx + px - size / 2, cy + py - size / 2, size, size, colour);
+  };
+  for (const f of fires) blip(f, colFire, 2);
+  for (const f of folk) blip(f, INK, 2);
+  for (const f of fences) blip(f, colRed, 3);
+  for (const s of shots) if (s.k === 1) blip(s, colRed, 1);
+  for (const d of drones) blip(d, colRed, d.k ? 3 : 2);
+  if (sat) blip(sat, INK, 3);
+  box(cx - 1, cy - 1, 2, 3, INK);
+}
+
+function drawHud() {
+  if (G.mode !== PLAY) {
+    box(0, 84, BW, 46, PANEL, 120);
+    text(G.mode === OVER ? 'FIN DEL VUELO' : 'CÓNDOR 3000', CXS, 94, INK, 4, 1);
+    if (G.mode === OVER) text('PUNTAJE ' + G.score, CXS, 144, INK, 2, 1);
+    if ((now * 2) & 1) text('PRESIONA START', CXS, 226, INK, 2, 1);
+    text('RÉCORD ' + G.best, CXS, 248, DIM, 1, 1);
+    plate(0, BH - 36, BW, 36);
+    text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 27, INK, 1, 1);
+    text('VUELA BAJO · APAGA INCENDIOS · RESCATA GENTE · DERRIBA DRONES', CXS, BH - 13, DIM, 1, 1);
+    return;
+  }
+
+  // marks for what cannot be seen
+  for (const d of drones) mark(d.x, d.y, d.z, colRed);
+  for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed);
+  if (sat) mark(sat.x, sat.y, sat.z, INK);
+  const goal = folk[0] || fires[0];
+  if (goal) mark(goal.x, goal.y, goal.z + 4, folk[0] ? INK : colFire);
+  if (G.shield < 30 && (now * 4) & 1) {
+    // little shield left: the frame flashes
+    box(0, 0, BW, 3, colRed, 160);
+    box(0, BH - 3, BW, 3, colRed, 160);
+    box(0, 0, 3, BH, colRed, 160);
+    box(BW - 3, 0, 3, BH, colRed, 160);
+  }
+
+  // score, the multiplier, and how long the condor has kept low
+  plate(4, 4, 110, 36);
+  text('PUNTAJE', 8, 8, DIM);
+  if (G.agl < 8) text('VUELO BAJO', 110, 8, GOLD, 1, 2);
+  text(String(G.score).padStart(6, '0'), 8, 19, INK, 2);
+  text('×' + G.mult, 110, 19, G.mult > 1 ? GOLD : DIM, 2, 2);
+  box(8, 35, (G.low / 10) * 102, 2, GOLD);
+
+  // shield, boost and water
+  const rx = BW - 114;
+  plate(rx, 4, 110, 39);
+  text('ESCUDO', rx + 4, 8, DIM);
+  gauge(rx + 50, 9, 56, G.shield / 100, G.shield < 30 ? colRed : INK);
+  text('IMPULSO', rx + 4, 20, DIM);
+  gauge(rx + 50, 21, 56, G.stam / 100, GOLD);
+  text('AGUA', rx + 4, 32, DIM);
+  for (let i = 0; i < 3; i++) box(rx + 50 + i * 12, 33, 9, 5, WATER, i < G.water ? 0 : 60);
+
+  // height: the ground below (rising from the foot of the scale) and the condor above it
+  const foot = BH - 10;
+  const rung = (z) => foot - Math.sqrt(clamp(z, 0, P.ceiling) / P.ceiling) * 44;
+  plate(4, BH - 80, 36, 76);
+  text('ALT', 8, BH - 76, DIM);
+  text((G.agl * 10) | 0, 8, BH - 66, INK);
+  box(20, foot - 44, 4, 44, PANEL, 220);
+  box(20, rung(G.gnd), 4, foot - rung(G.gnd), DIM);
+  box(16, rung(CA), 12, 1, DIM, 140);
+  box(16, rung(STRATO), 12, 1, DIM, 140);
+  box(14, rung(lead.z) - 1, 16, 2, INK);
+
+  radar(BW - 32, BH - 32, 27);
+
+  // what is going on
+  if (G.hacked) {
+    box(0, 58, BW, 56, PANEL, 130);
+    text('¡HACKEADO!', CXS, 66, colRed, 3, 1);
+    text('AGITA LA PALANCA Y MACHACA B1', CXS, 92, INK, 1, 1);
+    gauge(CXS - 80, 103, 160, G.purge, INK);
+  } else if (G.chan > 0) {
+    box(0, 62, BW, 30, PANEL, 130);
+    text('HACKEO ENTRANTE: TONEL O DISPARA', CXS, 67, colRed, 2, 1);
+    gauge(CXS - 80, 84, 160, G.chan, colRed);
+  } else if (G.msgT > 0) {
+    const size = G.msg.length > 30 ? 1 : 2;
+    box(0, 62, BW, 10 + size * 8, PANEL, 110);
+    text(G.msg, CXS, 68, INK, size, 1);
+  }
+  const far = goal
+    ? (folk[0] ? `ALUVIÓN · ${folk.length} POR RESCATAR` : `INCENDIO · ${fires.length} FOCOS`) + ` · ${(Math.hypot(goal.x - lead.x, goal.y - lead.y) * 10) | 0} M`
+    : sat
+      ? 'SATÉLITE HACKER EN LA ESTRATÓSFERA'
+      : '';
+  if (far) {
+    plate(CXS - 116, BH - 18, 232, 14);
+    text(far, CXS, BH - 14, INK, 1, 1);
+  }
+}
+
 function drawFrame() {
   fwdX = Math.sin(cam.yaw);
   fwdY = -Math.cos(cam.yaw);
@@ -2281,7 +2521,10 @@ function drawFrame() {
 
   drawWorld();
   drawSky();
-  if (alive && (G.inv <= 0 || (now * 12) & 1)) drawFlyer(lead); // it blinks while it is safe from harm
+  if (alive && (G.inv <= 0 || (now * 12) & 1)) {
+    drawFlyer(lead); // it blinks while it is safe from harm
+    drawFlames(lead);
+  }
   drawThings();
   if (alive) drawTrails(lead);
   drawPuffs();
@@ -2291,6 +2534,7 @@ function drawFrame() {
     const a = (G.flash * 200) | 0;
     for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], colTrail, a);
   }
+  drawHud();
 }
 
 
@@ -2316,12 +2560,6 @@ new Phaser.Game(config);
 
 let frameTex;
 let frameData;
-let gfx;
-let tScore;
-let tMsg;
-let tInfo;
-let tBig;
-let tHud;
 let drawMs = 0;
 
 function create() {
@@ -2329,17 +2567,6 @@ function create() {
   frameData = frameTex.context.createImageData(BW, BH);
   FB = new Uint32Array(frameData.data.buffer);
   this.add.image(0, 0, 'frame').setOrigin(0).setScale(PX);
-
-  const text = (x, y, size, ox) =>
-    this.add
-      .text(x, y, '', { fontFamily: 'monospace', fontSize: size + 'px', fontStyle: 'bold', color: '#ffffff', align: 'center', stroke: '#2a4560', strokeThickness: 4 })
-      .setOrigin(ox, 0);
-  gfx = this.add.graphics();
-  tScore = text(10, 8, 20, 0);
-  tMsg = text(GAME_WIDTH / 2, 120, 22, 0.5);
-  tInfo = text(GAME_WIDTH / 2, GAME_HEIGHT - 34, 15, 0.5);
-  tBig = text(GAME_WIDTH / 2, 150, 54, 0.5);
-  tHud = text(GAME_WIDTH - 180, 9, 12, 1).setText('ESCUDO\nAGUA').setAlign('right').setLineSpacing(4);
 
   AC = this.sound.context || null;
   buildPalettes();
@@ -2358,55 +2585,5 @@ function update(time, delta) {
   frameTex.context.putImageData(frameData, 0, 0);
   frameTex.refresh();
 
-  // ── the panel
-  const play = G.mode === PLAY;
-  gfx.clear();
-  tScore.setVisible(play);
-  tHud.setVisible(play);
-  tBig.setVisible(!play);
-  tMsg.setText('');
-  tInfo.setText('');
-  if (!play) {
-    tBig.setText(G.mode === OVER ? 'FIN DEL VUELO' : 'CÓNDOR 3000');
-    tMsg.setY(240).setText(
-      (G.mode === OVER ? `PUNTAJE ${G.score}\n` : '') + `RÉCORD ${G.best}\n\n` + ((now * 2) & 1 ? 'PRESIONA START' : ' '),
-    );
-    tInfo.setY(GAME_HEIGHT - 76).setText('PALANCA: VOLAR    B1 DISPARO    B2 / B3 TONEL    B4 IMPULSO    B5 SOLTAR AGUA\nVUELA BAJO PARA MULTIPLICAR · APAGA INCENDIOS · RESCATA GENTE · DERRIBA DRONES');
-    return void clearPressed();
-  }
-  tScore.setText(String(G.score).padStart(6, '0') + (G.mult > 1 ? '  ×' + G.mult : ''));
-
-  // shield, and the loads of water aboard
-  gfx.lineStyle(2, 0xffffff, 1).strokeRect(GAME_WIDTH - 172, 12, 160, 14);
-  gfx.fillStyle(G.shield < 30 ? 0xff2846 : 0xa8c8e0, 1).fillRect(GAME_WIDTH - 170, 14, 1.56 * G.shield, 10);
-  for (let i = 0; i < 3; i++) {
-    gfx.fillStyle(0x6eb4e6, i < G.water ? 1 : 0.25).fillRect(GAME_WIDTH - 172 + i * 20, 32, 14, 10);
-  }
-
-  tMsg.setY(120);
-  if (G.hacked) {
-    // the hack: a bar to fill by thrashing the stick and hammering the button
-    tMsg.setText('¡HACKEADO!\nAGITA LA PALANCA Y MACHACA B1');
-    gfx.lineStyle(2, 0xff2846, 1).strokeRect(250, 190, 300, 16);
-    gfx.fillStyle(0xffffff, 1).fillRect(252, 192, 296 * Math.min(1, G.purge), 12);
-  } else if (G.chan > 0) {
-    tMsg.setText('HACKEO ENTRANTE: ¡TONEL O DISPARA!');
-    gfx.fillStyle(0xff2846, 1).fillRect(250, 156, 300 * G.chan, 8);
-  } else if (G.msgT > 0) tMsg.setText(G.msg);
-
-  // where help is needed, or where the satellite is
-  const goal = folk[0] || fires[0] || (lead.z > 120 ? sat : null);
-  if (goal) {
-    const dx = goal.x - lead.x;
-    const dy = goal.y - lead.y;
-    const side = wrapAngle(Math.atan2(dx, -dy) - lead.yaw);
-    const name = folk[0] ? `ALUVIÓN · ${folk.length} POR RESCATAR` : fires[0] ? `INCENDIO · ${fires.length} FOCOS` : 'SATÉLITE HACKER';
-    const far = `${name} · ${(Math.hypot(dx, dy) * 10) | 0} m`;
-    tInfo.setY(GAME_HEIGHT - 34).setText(side < -0.35 ? '<<  ' + far : side > 0.35 ? far + '  >>' : far);
-  } else if (sat) tInfo.setY(GAME_HEIGHT - 34).setText('SATÉLITE HACKER ARRIBA: SUBE A LA ESTRATÓSFERA');
-  clearPressed();
-}
-
-function clearPressed() {
   for (const key in pressed) pressed[key] = false;
 }
