@@ -875,39 +875,88 @@ function tell(who, line, once) {
   else talk.push(who, line);
 }
 
-// Sound: tones and bursts of noise, made on the spot.
+// Sound: all of it made on the spot from tones and bursts of noise — the effects, the
+// engines, the crew's voices and the music.
 let AC = null; // the audio context, once Phaser has one
+let OUT = null; // everything plays through this, which keeps it from clipping
 let NOISE = null;
-function tone(from, to, secs, type, vol) {
-  if (!AC || AC.state !== 'running') return;
+let ENGINE_TONE = null;
+let ENGINE_OPEN = null;
+let nextBeat = 0;
+let beatN = 0;
+let talkC = 0;
+
+// A tone sliding from one pitch to another as it dies away, starting `wait` seconds from now.
+function tone(from, to, secs, type, vol, wait) {
+  if (!OUT) return;
   const o = AC.createOscillator();
   const g = AC.createGain();
-  const t = AC.currentTime;
+  const t = AC.currentTime + (wait || 0);
   o.type = type;
   o.frequency.setValueAtTime(from, t);
   o.frequency.exponentialRampToValueAtTime(to, t + secs);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + secs);
-  o.connect(g).connect(AC.destination);
+  o.connect(g).connect(OUT);
   o.start(t);
   o.stop(t + secs);
 }
-function burst(secs, vol) {
-  if (!AC || AC.state !== 'running') return;
-  if (!NOISE) {
-    NOISE = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
-    const d = NOISE.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
-  }
+
+// A burst of noise dying away: `rate` low for a rumble, high for a hiss.
+function burst(secs, vol, wait, rate) {
+  if (!OUT) return;
   const s = AC.createBufferSource();
   const g = AC.createGain();
+  const t = AC.currentTime + (wait || 0);
   s.buffer = NOISE;
-  s.playbackRate.value = 0.4 + Math.random() * 0.3;
-  g.gain.setValueAtTime(vol, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + secs);
-  s.connect(g).connect(AC.destination);
-  s.start();
-  s.stop(AC.currentTime + secs);
+  s.playbackRate.value = rate || 0.4 + Math.random() * 0.3;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + secs);
+  s.connect(g).connect(OUT);
+  s.start(t);
+  s.stop(t + secs);
+}
+
+const pitch = (semitones) => 110 * 2 ** (semitones / 12); // from the A below middle C
+
+// Every frame: set the sound up once the browser lets it play, then keep the engines and the
+// music going.
+function sound() {
+  if (!AC || AC.state !== 'running') return;
+  const t = AC.currentTime;
+  if (!OUT) {
+    OUT = AC.createDynamicsCompressor();
+    OUT.connect(AC.destination);
+    NOISE = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+    const d = NOISE.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // the engines: a low rasp through a filter that opens with the throttle
+    ENGINE_TONE = AC.createOscillator();
+    ENGINE_OPEN = AC.createBiquadFilter();
+    const g = AC.createGain();
+    ENGINE_TONE.type = 'sawtooth';
+    g.gain.value = 0.045;
+    ENGINE_TONE.connect(ENGINE_OPEN).connect(g).connect(OUT);
+    ENGINE_TONE.start();
+  }
+  const thr = G.mode === OVER ? 0 : crew.reduce((sum, f) => sum + f.thr, 0) / crew.length;
+  ENGINE_TONE.frequency.setTargetAtTime(44 + thr * 62, t, 0.08);
+  ENGINE_OPEN.frequency.setTargetAtTime(110 + thr * 950, t, 0.08);
+
+  // the music: sixteen steps round four chords — a bass, a climbing figure over it, and, once
+  // there are enemies about, a drum and a hiss to drive it. A hack sours the harmony.
+  if (nextBeat < t - 1) nextBeat = t;
+  const hot = G.mode === PLAY && (drones.length || G.hacked);
+  while (nextBeat < t + 0.1) {
+    const step = beatN++ & 15;
+    const root = [0, 0, -4, -2][step >> 2] + (G.hacked ? 6 : 0);
+    const wait = nextBeat - t;
+    if (!(step & 1)) tone(pitch(root - 12), pitch(root - 12), 0.27, 'triangle', 0.1, wait);
+    if (hot || !(step & 3)) tone(pitch(root + [12, 19, 24, 19][step & 3]), pitch(root + 12), 0.11, 'square', 0.016, wait);
+    if (hot && !(step & 3)) tone(130, 40, 0.16, 'sine', 0.2, wait);
+    if (hot && step & 1) burst(0.03, 0.03, wait, 3);
+    nextBeat += 0.15;
+  }
 }
 
 const rand = Math.random;
@@ -926,7 +975,8 @@ function gain(points, text) {
   points *= G.mult;
   G.score += points;
   say(text + ' +' + points);
-  tone(520, 1040, 0.16, 'triangle', 0.12);
+  tone(660, 660, 0.07, 'triangle', 0.1); // two notes, rising
+  tone(990, 990, 0.14, 'triangle', 0.1, 0.07);
 }
 
 function heal(n) {
@@ -953,6 +1003,7 @@ function boom(x, y, z, n) {
   for (let i = 0; i < n; i++) puff(x, y, z, spread() * 9, spread() * 9, spread() * 9, 0.35 + rand() * 0.5, i % 4 ? 1 : 5, 1.1);
   puff(x, y, z, 0, 0, 0, 0.16, 2, 3);
   burst(0.2 + n * 0.02, 0.25);
+  tone(110, 30, 0.35, 'sine', 0.22);
 }
 
 function damage(d) {
@@ -973,6 +1024,7 @@ function hurt(f, d, why) {
   G.flash = 0.5;
   say(why, 1.2);
   tone(220, 50, 0.35, 'sawtooth', 0.2);
+  burst(0.15, 0.15);
   damage(d);
 }
 
@@ -1002,6 +1054,7 @@ function startGame(two) {
   crew.length = 1;
   Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: Math.max(lead.z, groundAt(lead.x, lead.y) + 20) });
   talk.length = talkT = told = 0;
+  tone(220, 880, 0.5, 'triangle', 0.1);
   tell(0, 'AÑO 3000. LAS IA ENEMIGAS\nNOS ATACAN CON SUS DRONES.');
   tell(1, 'LA BIOINGENIERÍA NOS HIZO SÚPER LISTOS:\nPILOTEAMOS MEJOR QUE CUALQUIER IA.');
   tell(0, 'DISPARA CON B1. VUELA BAJO\nPARA MULTIPLICAR LOS PUNTOS.');
@@ -1158,10 +1211,20 @@ function simulate(dt) {
   G.shake *= Math.exp(-5 * dt);
   G.flash *= Math.exp(-4 * dt);
   const play = G.mode === PLAY;
-  if (talk[1] && (talkT += dt) > talk[1].length * 0.03 + 2.6) {
-    talk.splice(0, 2); // the line has been read: on to the next
-    talkT = 0;
+  if (talk[1]) {
+    // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
+    const c = ((talkT += dt) * 40) | 0;
+    if (c !== talkC && c < talk[1].length && c % 3 === 0) {
+      if (talk[0]) tone(1000 + rand() * 500, 1500, 0.04, 'square', 0.02);
+      else tone(150 + rand() * 40, 90, 0.07, 'sawtooth', 0.045);
+    }
+    talkC = c;
+    if (talkT > talk[1].length * 0.03 + 2.6) {
+      talk.splice(0, 2); // the line has been read: on to the next
+      talkT = 0;
+    }
   }
+  if (play && G.shield < 30 && ((now * 1.6) | 0) !== (((now - dt) * 1.6) | 0)) tone(880, 880, 0.08, 'square', 0.04); // little shield left
   if (play && G.shield < 35) tell(1, 'ESCUDO BAJO. LOS RESCATES Y LOS\nINCENDIOS APAGADOS LO RECUPERAN.', 128);
   if (play && !crew[1] && pressed.START2) join();
   const duo = crew.length > 1;
@@ -1209,6 +1272,7 @@ function simulate(dt) {
         f.dash = 0.4;
         f.stam -= 18;
         burst(0.35, 0.2);
+        tone(140, 620, 0.3, 'sawtooth', 0.05);
       }
       if (held[k + '4'] && f.stam > 0) {
         burn = 1;
@@ -1259,6 +1323,7 @@ function simulate(dt) {
       G.hacked = 0;
       G.immune = 9;
       G.flash = 1;
+      tone(200, 1600, 0.45, 'square', 0.07);
       for (const d of drones) if (d.k) d.hp = 0;
       gain(400, '¡HACKER EXPULSADO!');
     }
@@ -1320,7 +1385,7 @@ function simulate(dt) {
     f.fireCd -= dt;
     if (play && held[f.key + '1'] && !G.hacked && f.fireCd <= 0) {
       f.fireCd = 0.12;
-      tone(1100, 320, 0.07, 'square', 0.03);
+      tone(1100 - f.id * 260, 320, 0.07, 'square', 0.03); // each flyer's guns have their own note
       shots.push({ k: 0, x: f.x + nx * 3, y: f.y + ny * 3, z: f.z + nz * 3, vx: nx * SHOT, vy: ny * SHOT, vz: nz * SHOT, t: 0.7, to: f.lock });
     }
 
@@ -1362,6 +1427,7 @@ function simulate(dt) {
       }
       if (pressed[f.key + '5'] && G.water > 0) {
         G.water--;
+        burst(0.3, 0.08, 0, 1.5);
         shots.push({ k: 2, x: f.x, y: f.y, z: f.z - 1, vx: sx * spd, vy: sy * spd, vz: -4, t: 8 });
       }
     }
@@ -1443,6 +1509,7 @@ function simulate(dt) {
     const tz = f.z - d.z;
     const l = 70 / Math.hypot(tx, ty, tz);
     shots.push({ k: 1, x: d.x, y: d.y, z: d.z, vx: tx * l, vy: ty * l, vz: tz * l, t: 4, r: size });
+    tone(520, 180, 0.12, 'sawtooth', 0.025);
   };
 
   // ── drones keep a station ahead of the squad, weaving about it. Shooters fire; hackers
@@ -2732,6 +2799,7 @@ function update(time, delta) {
   if (G.mode !== PLAY && G.t > 1 && (pressed.START1 || pressed.START2 || pressed.P1_1)) startGame(pressed.START2);
 
   simulate(Math.min(delta / 1000, 0.05));
+  sound();
   const t0 = performance.now();
   drawFrame();
   drawMs += (performance.now() - t0 - drawMs) * 0.1;
