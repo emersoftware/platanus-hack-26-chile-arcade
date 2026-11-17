@@ -1144,12 +1144,8 @@ function startGame(two) {
   Object.assign(lead, { s: 0, sc: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
   talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
-  // the briefing: what there is to do and how, one thing at a time, before anything happens
-  tell(0, 'AÑO 2075. FUEGO, ALUVIONES Y DRONES DE IA\nENEMIGA: NOSOTROS SOMOS EL RESCATE.');
-  tell(1, 'PALANCA: ATRÁS SUBE, ADELANTE BAJA.\nMANTENLA A UN LADO PARA VIRAR EN SECO.');
-  tell(0, 'BOTÓN 1 DISPARA. LOS DRONES ORBITAN Y SE\nLANZAN: DERRÍBALOS O ESQUIVA CON 2 O 3.');
-  tell(1, 'BOTÓN 4 DA IMPULSO. VOLAR BAJO\nMULTIPLICA LOS PUNTOS.');
-  tell(0, 'SIGUE LAS FLECHAS: MOJA EL BALDE Y SUELTA EL\nAGUA CON EL 5. PASA BAJITO SOBRE LA GENTE.');
+  // no briefing: the stick now, and everything else when it is first needed
+  tell(0, 'PALANCA: ATRÁS SUBE, ADELANTE BAJA.\nMANTENLA A UN LADO PARA VIRAR EN SECO.');
   if (two) join();
 }
 
@@ -1190,11 +1186,12 @@ function modelPoint(f, ma, mb, mc, out, o) {
 
 function spawnDrone(k) {
   if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ UN\nGIRO (BOTÓN 2 O 3) ANTES DE QUE ENTRE.', 2);
-  // they come in from one flank or the other, tougher as the flight goes on. A drone loiters,
+  else tell(1, 'BOTÓN 1 DISPARA. LOS DRONES ORBITAN Y SE\nLANZAN: DERRÍBALOS O ESQUIVA CON 2 O 3.', 1);
+  // they come in from one flank or the other, tougher with each emergency. A drone loiters,
   // circling the crew (for less time the longer the flight has lasted), and then dives at one
   // of them; a hacker takes enough killing to get its hack started
   let side = rand() < 0.5 ? -1 : 1;
-  drones.push({ k, hp: k ? 16 : 7 + Math.min(6, (gT / 45) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: sq.z + 8 });
+  drones.push({ k, hp: k ? 16 : 4 + Math.min(6, gEmN), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: sq.z + 8 });
 }
 
 // A spot of ground near the squad, mostly ahead of it, that passes the test.
@@ -1673,6 +1670,7 @@ function simulate(dt) {
         gShake = 0.4;
         pop = { x: d.x, y: d.y, z: d.z, t: now + 1, s: '+' + (d.k ? 300 : 100) * gMult };
         gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO', d.by);
+        tell(0, 'BOTÓN 4 DA IMPULSO. VOLAR BAJO\nMULTIPLICA LOS PUNTOS.', 4);
       }
       drones.splice(i, 1);
       continue;
@@ -1703,7 +1701,7 @@ function simulate(dt) {
       if (l < 2.6) {
         boom(d.x, d.y, d.z, 30);
         if (kz.rollT > 0) gain(150, '¡ESQUIVADO!', kz);
-        else hurt(kz, 18, '¡KAMIKAZE!');
+        else hurt(kz, 14, '¡KAMIKAZE!');
         drones.splice(i, 1);
         continue;
       }
@@ -1748,8 +1746,9 @@ function simulate(dt) {
     let swarm = em && em.k;
     if (!em || gEmN > 1) {
       gSpawnT -= tick;
-      if (gSpawnT < 0 && drones.length < Math.min(7, 1 + n + ((gT / 30) | 0) + (swarm ? 3 : 0))) {
-        gSpawnT = Math.max(2.5, 7 - gT / 40) / n / (swarm ? 3 : 1);
+      // (more of them, and sooner, with every emergency the crew has been through)
+      if (gSpawnT < 0 && drones.length < Math.min(7, 1 + n + gEmN + (swarm ? 3 : 0))) {
+        gSpawnT = Math.max(3, 8 - gEmN) / n / (swarm ? 3 : 1);
         spawnDrone(0);
       }
       if (gEmN) {
@@ -1772,7 +1771,8 @@ function simulate(dt) {
     if (!em) {
       gEmT -= tick;
       if (gEmT < 0) {
-        if (gEmN++ & 1 ? startFlood() : startFire()) gEmT = 0;
+        // (one that finds no place to begin is tried again, not passed over)
+        if (gEmN & 1 ? startFlood() : startFire()) gEmN++;
         else gEmT = 2;
       }
     } else {
