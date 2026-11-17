@@ -3201,9 +3201,12 @@ function update(time, delta) {
     // cabinet left alone takes them as they stand)
     let up = pressed.P1_D || pressed.P2_D;
     if (up || pressed.P1_U || pressed.P2_U) gName = gName.slice(0, gPos) + String.fromCharCode(65 + ((gName.charCodeAt(gPos) - 65 + (up ? 1 : 25)) % 26)) + gName.slice(gPos + 1);
-    if ((go || gT > 40) && ++gPos > 2) saveTop();
+    if ((go || gT > 20) && ++gPos > 2) {
+      saveTop();
+      gT = 7; // the table stays up a while, and then it is back to the title
+    }
   } else if (gMode !== PLAY && gT > 1 && go) startGame(pressed.START2);
-  else if (gMode === OVER && gT > 25) {
+  else if (gMode === OVER && gT > 15) {
     // left alone, the end screen gives way to the title and its show
     gMode = TITLE;
     crew.length = 1;
