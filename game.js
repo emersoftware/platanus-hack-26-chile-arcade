@@ -1183,7 +1183,7 @@ function modelPoint(f, ma, mb, mc, out, o) {
 }
 
 function spawnDrone(k) {
-  if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ\nUN TONEL ANTES DE QUE ENTRE.', 2);
+  if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ UN\nGIRO (BOTÓN 2 O 3) ANTES DE QUE ENTRE.', 2);
   // they come in from one flank or the other, tougher as the flight goes on; the first ones
   // hold their fire a while, and a hacker takes enough killing to get its hack started
   drones.push({ k, hp: k ? 12 : 2 + Math.min(3, (gT / 90) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: rand() < 0.5 ? -110 : 110, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: gT < 30 ? 6 : 1.5 + rand(), ch: 0, x: 0, y: 0, z: 0 });
@@ -2663,7 +2663,7 @@ function key(n, x, y) {
 }
 // The cabinet's panel as it is laid out, with what each control does: the stick to the left,
 // and two rows of three buttons (the sixth has no use).
-const PANEL = ['DISPARO', 'TONEL IZQ', 'TONEL DER', 'IMPULSO', 'AGUA'];
+const PANEL = ['DISPARO', 'GIRO IZQ', 'GIRO DER', 'IMPULSO', 'AGUA'];
 function panel(y) {
   key(0, CXS - 82, y + 18);
   text('VOLAR', CXS - 82, y + 26, INK, 1, 1);
@@ -2677,10 +2677,10 @@ function panel(y) {
   }
 }
 
-// The game's name in solid letters: copies of it laid one behind another, each smaller and
-// lower, running back to a vanishing point under the middle of it.
+// The game's name in solid letters with no edge: black copies of it laid one behind another,
+// each smaller and lower, run back to a vanishing point under the middle of it.
 function logo(y) {
-  for (let i = 16; i >= 0; i--) text('2075', CXS, y + i * 1.5, i ? mix(pack(176, 112, 40), EDGE, i * 9) : GOLD, 5, 1, i).setScale(1 - i * 0.016);
+  for (let i = 16; i >= 0; i--) text('2075', CXS, y + i * 1.5, i ? pack(0, 0, 0) : GOLD, 5, 1, 1).setScale(1 - i * 0.016);
 }
 
 // A name beside a mark: what it is, and what to do about it.
@@ -2905,7 +2905,7 @@ function drawHud() {
     text('AGITA LA PALANCA Y MACHACA B1', CXS, 74, INK, 1, 1);
     gauge(CXS - 78, 88, 156, gPurge, INK);
   } else if (gChan > 0) {
-    text('HACKEO ENTRANTE: TONEL O DISPARA', CXS, 48, colRed, 2, 1);
+    text('HACKEO ENTRANTE: GIRA O DISPARA', CXS, 48, colRed, 2, 1);
     gauge(CXS - 78, 66, 156, gChan, colRed);
   } else if (gMsgT > 0) text(gMsg, CXS, 48, INK, gMsg.length > 30 ? 1 : 2, 1);
 
