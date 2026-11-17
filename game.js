@@ -2481,13 +2481,13 @@ function drawThings() {
   if (goal) beam(goal.x, goal.y, goal.z + 30, goal.x, goal.y, goal.z + 150, 1.2, folk[0] ? colTrail : colFire, 80);
   if (wet) beam(wet.x, wet.y, wet.z + 8, wet.x, wet.y, wet.z + 150, 1.2, WATER, 110);
   if (gMode === PLAY && (fires[0] || gWater)) {
-    // the buckets: orange when empty, blue with water in them, trailing a little behind
+    // the buckets: pale when empty, blue with water in them, trailing a little behind
     for (const f of crew) {
       const x = f.x - Math.sin(f.yaw) * 2;
       const y = f.y + Math.cos(f.yaw) * 2;
       const z = Math.max(groundAt(x, y) + 0.5, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
       beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
-      ball(x, y, z, 0.55, gWater ? GLASS : FIRE);
+      ball(x, y, z, 0.55, gWater ? GLASS : PLUME);
     }
   }
 
@@ -2694,6 +2694,7 @@ function radar(cx, cy, R) {
       px /= d;
       py /= d;
     }
+    box(cx + px - size / 2 - 1, cy + py - size / 2 - 1, size + 2, size + 2, EDGE);
     box(cx + px - size / 2, cy + py - size / 2, size, size, colour);
   };
   for (const f of fires) blip(f, colFire, 2);
@@ -2701,7 +2702,8 @@ function radar(cx, cy, R) {
   for (const f of fences) blip(f, colRed, 3);
   for (const s of shots) if (s.k === 1) blip(s, colRed, 1);
   for (const d of drones) blip(d, colRed, d.k ? 3 : 2);
-  if (sat) blip(sat, INK, 3);
+  if (sat) blip(sat, colRed, 3);
+  if (wet) blip(wet, WATER, 3);
   crew.forEach((f, i) => blip(f, i ? GOLD : INK, 2));
 }
 
@@ -2779,7 +2781,8 @@ function drawHud() {
     face(talk[0], 66, BH - 54, 2);
     text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 52, GOLD);
     text(talk[1].slice(0, talkT * 40), 128, BH - 38, INK);
-  } else {
+  } else if (gT < 60) {
+    // with the radio quiet, for the first minute: what the buttons do
     if (!crew[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 29, GOLD, 1, 1);
     text('B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 16, DIM, 1, 1);
   }
@@ -2808,10 +2811,10 @@ function drawHud() {
   // marks: what cannot be seen and where to go, each with what to do
   for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : 'DRON');
   for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed, 'LÁSER: TONEL');
-  if (sat) mark(sat.x, sat.y, sat.z, INK, 'SATÉLITE: SUBE', 1);
+  if (sat) mark(sat.x, sat.y, sat.z, colRed, 'SATÉLITE: SUBE', 1);
   if (folk[0]) mark(goal.x, goal.y, goal.z + 4, INK, 'RESCATE: PASA BAJITO', 1);
   else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, gWater ? 'FUEGO: SUELTA B5' : 'FUEGO', gWater);
-  if (wet) mark(wet.x, wet.y, wet.z + 3, INK, 'AGUA: MOJA EL BALDE', 1);
+  if (wet) mark(wet.x, wet.y, wet.z + 3, WATER, 'AGUA: MOJA EL BALDE', 1);
 }
 
 function drawFrame() {
