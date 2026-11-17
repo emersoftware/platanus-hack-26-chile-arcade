@@ -650,20 +650,11 @@ function partAt(x, y, z, who) {
     return inEll(x, y - 24, z - 6.3, 7.5, 8.5, 6.2) || inEll(x, y - 14.5, z - 4.8, 3.4, 5, 2.9) ? BODY : 0;
   }
   if (who > 1) {
-    // Darwin's portrait, as the animal is: a wedge whose flat green back runs level out to
-    // the point of the snout, a ridge along each edge of it, the flanks falling away inwards
-    // under the ridge and the throat cut back hollow beneath the snout. Small dark eyes sit
-    // just under the ridge.
-    if (inEll(d - 4.1, y - 18, z - 8, 1, 1.1, 1)) return ENGINE;
-    if (inEll(d - 3.3, y - 18, z - 8, 1.7, 1.8, 1.7)) return GLASS;
-    // its throat, round under the jaw, and its forelegs
-    if (inEll(x, y - 17.5, z - 4.6, 3, 5.5, 3.2) || inEll(d - 5.2, y - 27 + (z - 3) * 0.6, z - 3, 1.5, 1.6, 3.2)) return BODY;
-    const t = (y - 7) / 26; // 0 at the tip of the snout, 1 where the body is widest
-    if (t < 0 || t > 1.25) return 0;
-    const u = Math.min(t, 1);
-    const foot = 9.3 - 9 * Math.pow(u, 0.6); // the underside: it drops away fast behind the tip
-    const h = (z - foot) / (10.5 - foot);
-    return h > 0 && z < 10.5 && d < (0.6 + 8 * Math.pow(u, 1.3)) * (t > 1 ? Math.sqrt(1 - ((t - 1) * 4) ** 2) : 1) * (0.45 + 0.55 * h) ? BODY : 0;
+    // Darwin's portrait: a flat, wide head drawn out into a pointed snout, golden eyes
+    // standing up at its sides
+    if (inEll(d - 7.3, y - 22.5, z - 9.5, 1.5, 1.7, 1.5)) return ENGINE;
+    if (inEll(d - 6, y - 22.5, z - 9, 2.7, 3, 2.7)) return GLASS;
+    return inEll(x, y - 27, z - 5.6, 8.5, 9.5, 5.2) || inEll(x, y - 17, z - 5.2, 4.8, 8, 3.2) || inEll(x, y - 9.5, z - 5.4, 1.8, 3.4, 1.5) ? BODY : 0;
   }
   if (who) {
     if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
@@ -2591,7 +2582,7 @@ function text(str, x, y, colour, size, align) {
 const HEADS = [0, 1].map((id) => ({ id, ax: new Float32Array(9), thr: 0, flex: 0 }));
 function face(who, x, y, s, flip) {
   const f = HEADS[who];
-  const t = (who ? 0.85 : 0.3) + Math.sin(now * 1.4 + who) * 0.15;
+  const t = 0.85 + Math.sin(now * 1.4 + who) * 0.15;
   const c = Math.cos(t) * (flip ? -1 : 1);
   const n = Math.sin(t);
   const a = f.ax;
@@ -2604,8 +2595,8 @@ function face(who, x, y, s, flip) {
   for (let i = 0; i < 9; i += 3) {
     // tipped a little towards the viewer, to show the top of the head
     const d = a[i] * fwdX + a[i + 1] * fwdY;
-    const tc = who ? 0.95 : 0.98; // (the frog hardly at all: it is known by its profile)
-    const ts = who ? 0.31 : 0.2;
+    const tc = who ? 0.95 : 1; // (the monito; the frog is seen level)
+    const ts = who ? 0.31 : 0;
     const e = d * tc - a[i + 2] * ts - d;
     a[i + 2] = d * ts + a[i + 2] * tc;
     a[i] += fwdX * e;
