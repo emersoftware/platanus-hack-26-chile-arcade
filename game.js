@@ -2568,7 +2568,7 @@ function text(str, x, y, colour, size, align) {
   str = String(str);
   size = SIZES[size || 1];
   if (t.text !== str) t.setText(str);
-  if (t.size !== size) t.setFontSize((t.size = size)).setStroke('#0c1626', 2.5 + size / 12);
+  if (t.size !== size) t.setFontSize((t.size = size)).setStroke('#0c1626', Math.min(10, 2.5 + size / 12));
   if (t.ink !== colour) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
@@ -2741,7 +2741,7 @@ function drawHud() {
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     if (over) text('FIN DEL VUELO', CXS, 62, INK, 4, 1);
     else {
-      text('2075', CXS, 30, INK, 5, 1);
+      text('2075', CXS, 30, GOLD, 5, 1);
       text('RESCATE ENTRE DESASTRES NATURALES', CXS, 88, INK, 2, 1);
     }
     const naming = over && gName && gPos < 3;
