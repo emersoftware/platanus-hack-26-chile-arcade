@@ -2855,7 +2855,7 @@ function drawHud() {
     }
     const naming = over && gName && gPos < 3;
     if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
-    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 134, GOLD, 2, 1);
+    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 142, GOLD, 2, 1);
     if (naming) {
       text('¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
       text([...gName].map((c, i) => (i === gPos && blink ? ' ' : c)).join(' '), CXS, 140, GOLD, 3, 1);
@@ -2879,8 +2879,8 @@ function drawHud() {
         );
       // the table of records
       // (under the advice at the end of a flight; on the title down the left, clear of the show)
-      if (BEST[0] && !over) text('MEJORES VUELOS', 8, 150, INK);
-      BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), over ? CXS : 8, (over ? 140 : 163) + i * 11, i ? DIM : GOLD, 1, over));
+      if (BEST[0] && !over) text('MEJORES VUELOS', 10, 168, INK);
+      BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), over ? CXS : 10, (over ? 142 : 183) + i * 12, i ? DIM : GOLD, 1, over));
     }
     face(0, 34, BH - 28, 2.5);
     face(1, BW - 34, BH - 28, 2.5, 1);
