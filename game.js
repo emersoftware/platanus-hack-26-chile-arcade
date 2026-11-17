@@ -281,6 +281,7 @@ const GROUND = [
   [14, 84, 160, 190],
   [17, 240, 248, 250],
   [20, 214, 210, 198],
+  [22, 150, 112, 78], // bare earth, and a river in flood
   [24, 140, 176, 100],
   [30, 98, 150, 86],
   [36, 90, 122, 80],
@@ -487,7 +488,7 @@ function buildWorld(seed) {
         const bed = 2.5 + rise * 22; // the ground falls away into the ravine, down to the river
         if (e > bed) e = bed + (e - bed) * smooth(0.024, 0.14, cut);
         e = clamp(e + (SNOWFIELD - e) * edge, 0.5, HMAX) * smooth(-0.004, 0.03, u - COAST); // the land comes up out of the sea
-        if (cut < 0.006 && rise > 0.4 && edge < 0.01 && r % 11 === 0) QUEB.push(i);
+        if (cut < 0.004 && u > 0.43 && u < 0.47 && r % 5 === 0) QUEB.push(i);
 
         // colour by height: green low down, then blue-grey rock and snow
         if (u - COAST < 0.012) g = G_SAND;
@@ -576,45 +577,7 @@ function buildWorld(seed) {
       CTONE[i] = clamp(Math.round(62 + E[i] * 3 + (lightOn(gx, gy) - 0.74) * 22), CLOUD_LOW + 2, WHITE);
     }
   }
-  buildTowns(seed);
   GF = soften(GR);
-}
-
-// Small towns, alternately in the valley and behind the beach: pale streets on the ground and
-// a huddle of houses round a plaza and its church (each: x, y, ground, height, half-width, tone).
-const TOWNS = [];
-function buildTowns(seed) {
-  TOWNS.length = 0;
-  for (let k = 0; k < 6; k++) {
-    let cx = 0;
-    let cy = 0;
-    for (let tries = 0; tries < 60; tries++) {
-      // somewhere green and level, off the rivers
-      const r = hash2(k, tries, seed);
-      cx = N * (k & 1 ? COAST + 0.03 + (r % 100) / 4000 : 0.32 + (r % 100) / 800);
-      cy = ((k + 0.5) * N) / 6 + ((r >>> 8) % 70) - 35;
-      const g = GR[cell(cx, cy)] / GS;
-      if (g > 23 && g < 32 && Math.abs(groundAt(cx + 7, cy) - groundAt(cx - 7, cy)) < 2.5) break;
-    }
-    const b = [];
-    for (let gy = -4; gy <= 4; gy++) {
-      for (let gx = -4; gx <= 4; gx++) {
-        const r = hash2(gx + k * 32, gy, seed + 5);
-        const d = Math.hypot(gx, gy);
-        const i = cell(cx + gx * 2.7, cy + gy * 2.7);
-        if (d < 4.4 + (r & 3) * 0.2 && GR[i] > G_SAND * GS) {
-          for (let n = 0; n < 9; n++) GR[cell(cx + gx * 2.7 + (n % 3) - 1, cy + gy * 2.7 + ((n / 3) | 0) - 1)] = (G_SAND + 1) * GS;
-        }
-        if (d && d < 1.5) GR[i] = 27 * GS; // the plaza: a green square round the church
-        if (d > 3.5 || (d && d < 1.5) || r % 5 === 0) continue;
-        const x = cx + gx * 2.7 + (d ? ((r >>> 4) % 10) / 12 : 0);
-        const y = cy + gy * 2.7 + (d ? ((r >>> 20) % 10) / 12 : 0);
-        // the church stands in the middle: tone 3, tall and narrow under a spire
-        b.push(x, y, groundAt(x, y), d ? 1 + ((r >>> 8) % 3) * 0.45 : 3, d ? 0.7 + ((r >>> 12) % 3) * 0.15 : 0.6, d ? (r >>> 16) % 3 : 3);
-      }
-    }
-    TOWNS.push({ x: cx, y: cy, b });
-  }
 }
 
 function groundAt(x, y) {
@@ -885,7 +848,6 @@ let gChan = 0; // how far a hacker has got with breaking in
 let gImmune = 0;
 let gSpawnT = 0;
 let gHackT = 0;
-let gFenceT = 0;
 let gEmT = 0;
 let gEmN = 0;
 let gSatT = 0;
@@ -902,13 +864,12 @@ const drones = [];
 const shots = []; // k: 0 the crew's, 1 the enemy's, 2 a load of water
 const fires = [];
 const folk = []; // people waiting for rescue
-const fences = [];
 let sat = null; // the hackers' satellite
 let em = null; // the emergency under way: k 0 a wildfire, 1 a mudslide
 const ROPE = 4; // how far below a flyer its water bucket hangs
 let wet = null; // while there is a fire and no water aboard: the nearest water, and when it was looked for
 let wetT = 0;
-const QUEB = []; // cells in the ravines of the cordillera, where mudslides start
+const QUEB = []; // cells on the rivers where they come out into the valley: where a flood starts
 
 // The crew talk: Darwin (0) and the monito (1) tell the story and say what to do. Lines wait
 // their turn; one given a number is news — said next, and only once a game.
@@ -1114,12 +1075,11 @@ function startGame(two) {
   gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = gRain = gBow = 0;
   gMult = 1;
   gShield = 100;
-  gSpawnT = 3; // one thing at a time: drones first, then a fence, an emergency, and the satellite last
+  gSpawnT = 3; // one thing at a time: drones first, then an emergency, and the satellite last
   gHackT = 20;
-  gFenceT = 25;
   gEmT = 40;
   gSatT = 110;
-  drones.length = shots.length = fires.length = folk.length = fences.length = 0;
+  drones.length = shots.length = fires.length = folk.length = 0;
   sat = em = null;
   crew.length = 1;
   Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
@@ -1186,18 +1146,15 @@ function landNear(near, far, test) {
   return null;
 }
 
-// Where a fire can take and be fought: green ground, low down in the open and near enough level.
-const GREEN = (x, y) => {
-  const g = GR[cell(x, y)] / GS;
-  const z = groundAt(x, y);
-  return g > 23 && g < 40 && z < 13 && Math.abs(groundAt(x + 5, y) - z) + Math.abs(groundAt(x, y + 5) - z) < 2;
-};
+// Where a fire can take: in a forest, low enough down to be fought.
+const WOOD = (x, y) => GR[cell(x, y)] > 37 * GS && GR[cell(x, y)] < 40 * GS && groundAt(x, y) < 16;
 
 function light(x, y) {
   fires.push({ x, y, z: groundAt(x, y) });
 }
 
-// A wildfire: a few fires that spread until they are put out with water from the sea or a river.
+// A wildfire: a few fires in a forest, which spread through it until they are put out with
+// water from the sea or a river.
 // The sea or river nearest the crew: rings of places, further and further out, each looked
 // over from dead ahead round to behind, so of two as near it is the one in front.
 function findWater() {
@@ -1216,12 +1173,12 @@ function siren() {
   tone(880, 440, 0.4, 'square', 0.06, 0.45);
 }
 function startFire() {
-  const at = landNear(110, 260, GREEN);
+  const at = landNear(110, 260, WOOD);
   if (!at) return false;
   for (let i = 0; i < 5; i++) {
-    const x = at[0] + spread() * 8;
-    const y = at[1] + spread() * 8;
-    if (!i || GREEN(x, y)) light(x, y);
+    const x = at[0] + (i && spread() * 8);
+    const y = at[1] + (i && spread() * 8);
+    if (WOOD(x, y)) light(x, y);
   }
   em = { k: 0, t: 0 };
   siren();
@@ -1230,8 +1187,8 @@ function startFire() {
   return true;
 }
 
-// A storm, and then its mudslide: rain over the cordillera, until the mud lets go high in a
-// ravine and runs down it towards the people waiting below.
+// A storm, and then a flood: it rains until a river bursts its banks where it comes out into
+// the valley, and the brown water runs down it towards the people stranded on its banks.
 function startFlood() {
   let best = -1;
   let bd = 1e9;
@@ -1246,39 +1203,42 @@ function startFlood() {
     }
   }
   if (best < 0) return false;
-  // downhill from there, a cell at a time; where the ground is level, rivers run west
+  // downstream is west: column by column, the water nearest to where it was in the last
   const path = [];
   let x = best & NM;
   let y = Math.round(by);
-  for (let s = 0; s < 230; s++) {
-    path.push(x + 0.5, y + 0.5);
-    let bx = -1;
-    let bj = 0;
-    let bh = 1e9;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const h = H[cell(x + dx, y + dy)] + dx * 0.6 + rand() * 0.2;
-        if (h < bh) {
-          bh = h;
-          bx = dx;
-          bj = dy;
-        }
+  for (let s = 0; s < 200; s++, x--) {
+    for (let d = 0; d < 12; d++) {
+      if (GR[cell(x, y + d)] <= G_SHALLOW * GS) {
+        y += d;
+        break;
+      }
+      if (GR[cell(x, y - d)] <= G_SHALLOW * GS) {
+        y -= d;
+        break;
       }
     }
-    x = clamp(x + bx, 2, N - 3);
-    y += bj;
+    path.push(x, y);
   }
-  for (let i = 70; i < 230; i += 45) folk.push({ x: path[i * 2], y: path[i * 2 + 1], z: groundAt(path[i * 2], path[i * 2 + 1]), i });
-  em = { k: 1, t: 0, path, at: 0, saved: 0 };
+  for (let i = 60; i < 200; i += 45) {
+    // someone on the bank: out of the water to one side or the other, and a little way up it
+    x = path[i * 2];
+    y = path[i * 2 + 1];
+    for (let n = 0; n < 60 && (n < 2 || GR[cell(x, y - 2)] <= G_SHALLOW * GS || GR[cell(x, y + 2)] <= G_SHALLOW * GS); n++) y += (i & 1) * 2 - 1;
+    folk.push({ x, y, z: groundAt(x, y), i });
+  }
+  em = { k: 1, t: 0, path, at: 0, saved: 0, done: 0, was: [] };
   siren();
   say('¡TORMENTA!');
-  tell(1, 'LLUEVE FUERTE EN LA CORDILLERA: SE VIENE UN\nALUVIÓN. PASA BAJITO SOBRE LAS BALIZAS.', 16);
+  tell(1, 'LLUEVE FUERTE Y EL RÍO SE VA A DESBORDAR:\nPASA BAJITO Y SACA A LA GENTE DE LA ORILLA.', 16);
   return true;
 }
 
 function endEmergency() {
-  if (em.k) gBow = 14; // after the storm, a rainbow
+  if (em && em.k) {
+    gBow = 14; // after the storm, a rainbow, and the river goes back into its bed
+    for (let i = 0; i < em.was.length; i += 2) GR[em.was[i]] = em.was[i + 1];
+  }
   em = null;
   fires.length = folk.length = 0;
   gEmT = 12 + rand() * 8;
@@ -1350,11 +1310,10 @@ function simulate(dt) {
     const rawY = (held[k + 'U'] ? 1 : 0) - (held[k + 'D'] ? 1 : 0);
     let turn = rawX;
     let lift = INVERT_Y ? -rawY : rawY;
+    f.free = !rawY;
     if (!play) {
       turn = Math.sin(now * 0.23) * 0.45; // out of play, it wanders by itself
       lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + 16 - f.z) / 6, -1, 1);
-    } else if (!rawY && f.z < Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 14, f.y + sy * 14)) + 5) {
-      lift = 0.7; // hands off the stick, it will not fly into the ground: it lifts over what is ahead
     } else if (gHacked) {
       turn = -turn;
       lift = -lift;
@@ -1400,7 +1359,7 @@ function simulate(dt) {
     if (duo) f.s += f.turn * 26 * dt;
 
     // barrel rolls: one full turn about the nose, left or right, sliding it that way. While
-    // it rolls, shots glance off it and laser fences cannot hold it.
+    // it rolls, shots glance off it and a hacker's signal cannot hold it.
     if (play && (pressed[k + '2'] || pressed[k + '3']) && f.rollT <= 0) {
       f.rollT = 1;
       f.rollDir = pressed[k + '2'] ? -1 : 1;
@@ -1466,6 +1425,10 @@ function simulate(dt) {
     // for a moment, bounced up a little, throwing dust or spray. Only if it is still down
     // after that, or comes down again too soon, does it cost shield and get thrown back up
     const ground = Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 3, f.y + sy * 3));
+    // hands off the stick, it will not fly into the ground: it is carried over what is ahead,
+    // nose level, so the guns stay where they were pointing
+    const floor = Math.max(ground, groundAt(f.x + sx * 14, f.y + sy * 14)) + 5;
+    if (play && f.free && f.z < floor) f.z += Math.min(floor - f.z, dt * 16);
     f.graze = Math.max(0, f.graze - dt);
     if (f.z - ground < 1) {
       f.z = ground + 1;
@@ -1495,14 +1458,14 @@ function simulate(dt) {
 
     // guns: they track whatever enemy is nearest the line of the nose
     f.lock = null;
-    let best = 0.06; // within about twenty degrees of the nose
+    let best = 0.035;
     const aim = (t) => {
       const dx = t.x - f.x;
       const dy = t.y - f.y;
       const dz = t.z - f.z;
       const d = Math.hypot(dx, dy, dz);
-      const off = 1 - (dx * nx + dy * ny) / Math.hypot(dx, dy) / Math.hypot(nx, ny); // its bearing, level
-      if (d < 150 && off < best && Math.abs(dz) < d * 0.6) {
+      const off = 1 - (dx * nx + dy * ny + dz * nz) / d;
+      if (d < 150 && off < best) {
         best = off;
         f.lock = t;
       }
@@ -1517,19 +1480,6 @@ function simulate(dt) {
     }
 
     if (play) {
-      // buildings are solid
-      for (const t of TOWNS) {
-        const dy = f.y - t.y - Math.round((f.y - t.y) / N) * N; // the town's nearest self, north or south
-        if (Math.abs(f.x - t.x) + Math.abs(dy) > 26) continue;
-        for (let o = 0; o < t.b.length; o += 6) {
-          const w = t.b[o + 4] + 0.8;
-          if (Math.abs(f.x - t.b[o]) < w && Math.abs(dy - t.b[o + 1] + t.y) < w && f.z < t.b[o + 2] + t.b[o + 3] + 0.3) {
-            hurt(f, 25, '¡EDIFICIO!');
-            f.kick = 24;
-          }
-        }
-      }
-
       // water: each flyer hangs a bucket on a line, as helicopters do. Dip it in the sea or a
       // river to fill it, B5 to let a load go
       if (gWater < 3 && [0, 4, -4].some((o) => GR[cell(f.x + sy * o, f.y - sx * o)] <= G_SHALLOW * GS || GR[cell(f.x + sx * o, f.y + sy * o)] <= G_SHALLOW * GS)) {
@@ -1716,35 +1666,6 @@ function simulate(dt) {
       }
     }
 
-    // ── laser fences across the squad's path: roll through one, or go round it
-    gFenceT -= dt;
-    if (gFenceT < 0 && gAgl < 30 && sq.z < 100) {
-      gFenceT = 10 + rand() * 8;
-      const off = spread() * 8;
-      const x = sq.x + sx * 130 + rx * off;
-      const y = sq.y + sy * 130 + sx * off;
-      const z = Math.max(groundAt(x, y), groundAt(x - rx * 18, y - sx * 18), groundAt(x + rx * 18, y + sx * 18)) + 2;
-      fences.push({ x, y, nx: sx, ny: sy, w: duo ? 34 : 22, z0: z, z1: z + 15, was: [-1, -1] });
-      tell(1, 'VALLA LÁSER ADELANTE: CRÚZALA\nHACIENDO UN TONEL CON B2 O B3.', 4);
-    }
-    for (let i = fences.length - 1; i >= 0; i--) {
-      const f = fences[i];
-      for (const c of crew) {
-        const dx = c.x - f.x;
-        const dy = c.y - f.y;
-        const along = dx * f.nx + dy * f.ny;
-        if (f.was[c.id] < 0 && along >= 0 && Math.abs(dy * f.nx - dx * f.ny) < f.w && c.z > f.z0 - 1 && c.z < f.z1 + 1) {
-          if (c.rollT > 0) {
-            gain(250, '¡TONEL!');
-            heal(5);
-          } else hurt(c, 22, '¡LÁSER!');
-        }
-        f.was[c.id] = along;
-      }
-      const gone = (sq.x - f.x) * f.nx + (sq.y - f.y) * f.ny;
-      if (gone > 30 || gone < -250) fences.splice(i, 1);
-    }
-
     // with a fire burning and the buckets dry, the crew is shown the way to the nearest water
     if (!fires[0] || gWater) wet = null;
     else if (now > wetT) {
@@ -1768,7 +1689,7 @@ function simulate(dt) {
           const f = fires[(rand() * fires.length) | 0];
           const x = f.x + spread() * 10;
           const y = f.y + spread() * 10;
-          if (GREEN(x, y)) light(x, y);
+          if (WOOD(x, y)) light(x, y);
           if (fires.length > 11) {
             say('INCENDIO FUERA DE CONTROL', 2.5);
             damage(15);
@@ -1777,10 +1698,26 @@ function simulate(dt) {
           }
         }
       } else {
-        // it rains for a while; then the mud runs down the ravine, and anyone it reaches is lost
+        // it rains for a while; then the river bursts its banks and the brown water runs down
+        // it, wider than the bed was. Anyone it reaches is lost
         if (em.t > 8) {
-          if (!em.at) say('¡ALUVIÓN!');
-          em.at = Math.min(em.path.length / 2 - 1, em.at + dt * 3.4);
+          if (!em.at) say('¡SE DESBORDÓ EL RÍO!');
+          em.at = Math.min(em.path.length / 2 - 1, em.at + dt * 3);
+          for (; em.done < em.at; em.done++) {
+            // from one bank to the other here, and four cells beyond each
+            const x = em.path[em.done * 2];
+            let lo = em.path[em.done * 2 + 1];
+            let hi = lo;
+            for (let n = 0; n < 16 && GR[cell(x, lo - 1)] <= G_SHALLOW * GS; n++) lo--;
+            for (let n = 0; n < 16 && GR[cell(x, hi + 1)] <= G_SHALLOW * GS; n++) hi++;
+            for (let y = lo - 4; y <= hi + 4; y++) {
+              const i = cell(x, y);
+              if (GR[i] - 22 * GS) {
+                em.was.push(i, GR[i]);
+                GR[i] = 22 * GS;
+              }
+            }
+          }
         }
         if (rand() < dt * 0.3) {
           gFlash = 0.6; // lightning, and its thunder a moment after
@@ -2439,41 +2376,13 @@ function beam(x1, y1, z1, x2, y2, z2, w, colour, alpha) {
 
 // An upright block — a building — seen face on: lit on the sun's side, shaded on the other,
 // with a dark line for its roof.
-// Walls and roofs, each lit and in shade: white, cream and pale blue houses under tiles or
-// zinc, and the church.
-const WALLS = [
-  [pack(244, 240, 228), pack(170, 176, 192), pack(196, 96, 70), pack(132, 66, 62)],
-  [pack(232, 214, 176), pack(156, 146, 140), pack(176, 84, 64), pack(118, 60, 58)],
-  [pack(190, 212, 230), pack(118, 138, 166), pack(120, 138, 156), pack(78, 92, 116)],
-  [pack(250, 248, 240), pack(178, 184, 200), pack(74, 98, 122), pack(48, 66, 92)],
-];
-// A building: walls with a lit side and a shaded one, under a pitched roof (a spire on the church).
-function slab(x, y, z, h, w, tone) {
-  if (!project(x, y, z)) return;
-  const hw = Math.max(0.6, w * prM);
-  const eaves = prY - h * prM;
-  const ridge = eaves - (tone > 2 ? 2.4 : 0.8) * w * prM;
-  const y1 = Math.min(BH, Math.round(prY));
-  for (let py = Math.max(0, Math.round(ridge)); py < y1; py++) {
-    const roof = py < eaves;
-    const half = roof ? Math.max(0.5, (hw * 1.2 * (py - ridge)) / (eaves - ridge)) : hw;
-    const x1 = Math.min(BW, Math.round(prX + half));
-    const edge = prX + (sunR < 0 ? 0.25 : -0.25) * half; // where the lit side meets the shaded one
-    for (let px = Math.max(0, Math.round(prX - half)), p = py * BW + px; px < x1; px++, p++) {
-      if (ZB[p] <= prV) continue;
-      ZB[p] = prV;
-      FB[p] = WALLS[tone][(roof ? 2 : 0) + (px < edge === sunR < 0 ? 0 : 1)];
-    }
-  }
-}
-
 const colRed = pack(255, 40, 70);
 const colShot = pack(200, 235, 255);
 const STORM = pack(56, 66, 92);
 const BOW = [pack(150, 90, 230), pack(70, 130, 255), pack(80, 220, 120), pack(255, 236, 90), pack(255, 160, 60), pack(255, 70, 80)];
 const colFire = pack(255, 160, 60);
 
-// The cast: drones, the satellite, fires, people, the mudslide, laser fences, shots.
+// The cast: drones, the satellite, fires, people, the flood, shots.
 function drawThings() {
   for (const d of drones) {
     // a body with one eye that watches the condor, between two rotor pods; hackers are dark,
@@ -2504,10 +2413,8 @@ function drawThings() {
     beam(f.x, f.y, f.z + 1, f.x, f.y, f.z + 26, 0.5, colTrail, 110 + ((Math.sin(now * 6) * 60) | 0));
   }
   if (em && em.k) {
-    for (let i = 0; i < 6; i++) {
-      const a = now * 2 + i * 1.05;
-      ball(em.x + Math.cos(a * 1.3) * 3, em.y + Math.sin(a) * 3, em.z + 0.8 + Math.abs(Math.sin(a * 2)) * 1.2, 1.4 + (i & 1) * 0.6, MUD);
-    }
+    // the head of the flood: a low roll of mud right across the river
+    for (let i = -3; i <= 3; i++) ball(em.x, em.y + i * 2.6, em.z + 0.5 + Math.abs(Math.sin(now * 5 + i)) * 0.5, 1.5, MUD);
   }
   // a tall light over wherever help is needed
   const goal = folk[0] || fires[0];
@@ -2524,26 +2431,6 @@ function drawThings() {
     }
   }
 
-  for (const f of fences) {
-    const px = -f.ny * f.w; // from the middle of the fence to a pylon
-    const py = f.nx * f.w;
-    for (let s = -1; s <= 1; s += 2) {
-      const x = f.x + px * s;
-      const y = f.y + py * s;
-      beam(x, y, groundAt(x, y), x, y, f.z1 + 2, 0.7, colOutline, 255);
-      ball(x, y, f.z1 + 2.5, 0.9, GLOW, 1);
-    }
-    for (let i = 0; i < 4; i++) {
-      const z = f.z0 + ((f.z1 - f.z0) * i) / 3;
-      beam(f.x - px, f.y - py, z, f.x + px, f.y + py, z, 0.3, colRed, 150 + ((Math.sin(now * 30 + i) * 80) | 0));
-    }
-  }
-  // towns close enough to make out
-  for (const t of TOWNS) {
-    const ty = t.y + Math.round((sq.y - t.y) / N) * N - t.y; // shift to its nearest self, north or south
-    if (Math.abs(sq.x - t.x) + Math.abs(sq.y - t.y - ty) > 320) continue;
-    for (let o = 0; o < t.b.length; o += 6) slab(t.b[o], t.b[o + 1] + ty, t.b[o + 2], t.b[o + 3], t.b[o + 4], t.b[o + 5]);
-  }
   for (const s of shots) {
     if (!s.k) beam(s.x, s.y, s.z, s.x - s.vx * 0.025, s.y - s.vy * 0.025, s.z - s.vz * 0.025, 0.6, WATER, 255);
     else ball(s.x, s.y, s.z, s.k === 2 ? 1 : s.r, s.k === 2 ? GLASS : GLOW, s.k === 1);
@@ -2732,7 +2619,6 @@ function radar(cx, cy, R) {
   };
   for (const f of fires) blip(f, colFire, 2);
   for (const f of folk) blip(f, INK, 2);
-  for (const f of fences) blip(f, colRed, 3);
   for (const s of shots) if (s.k === 1) blip(s, colRed, 1);
   for (const d of drones) blip(d, colRed, d.k ? 3 : 2);
   if (sat) blip(sat, colRed, 3);
@@ -2756,9 +2642,7 @@ function drawHud() {
           ? 'CONSEJO: MANTÉN B1 Y DERRIBA LOS DRONES ANTES DE QUE DISPAREN'
           : gWhy === 'HACK'
             ? 'CONSEJO: SI TE HACKEAN, AGITA LA PALANCA Y MACHACA B1'
-            : gWhy === '¡LÁSER!'
-              ? 'CONSEJO: CRUZA LAS VALLAS LÁSER CON UN TONEL (B2 O B3)'
-              : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
+            : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
         CXS,
         124,
         INK,
@@ -2862,7 +2746,6 @@ function drawHud() {
 
   // marks: what cannot be seen and where to go, each with what to do
   for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : 'DRON');
-  for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed, 'LÁSER: TONEL');
   if (sat) mark(sat.x, sat.y, sat.z, colRed, sat.z - sq.z > 30 ? 'SATÉLITE: SUBE' : 'SATÉLITE: DISPARA', 1);
   if (folk[0]) mark(goal.x, goal.y, goal.z + 4, INK, 'RESCATE: PASA BAJITO', 1);
   else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, gWater ? 'FUEGO: SUELTA B5' : 'FUEGO', gWater);
