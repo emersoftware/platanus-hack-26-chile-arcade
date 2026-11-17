@@ -49,7 +49,7 @@ const BOOST = 1.8; // × speed while the thruster is held
 const TURN_RATE = 1.25; // radians per second at full stick
 const BANK_ANGLE = 52; // degrees of bank in a full turn
 const CLIMB_RATE = 22; // world units per second at full stick
-const INVERT_Y = false; // true: stick up dives (flight-stick style)
+const INVERT_Y = true; // the stick flies like an aircraft's: pull back (down) to climb, push forward to dive
 const CRUISE_ALT = 22;
 const CEILING = 330; // the top of the stratosphere
 const ROLL_TIME = 0.8; // seconds for a barrel roll
@@ -575,18 +575,6 @@ function buildTowns(seed) {
   }
 }
 
-// A power line runs the length of the valley: a pylon every PYLON units, cables sagging between.
-const PYLON = 32;
-const PYLON_H = 10;
-const ARM = 1.2; // how far below a pylon's top the cables hang from …
-const SAG = 1.8; // … and how much lower they are at mid-span
-function lineX(y) {
-  return N * (0.44 + 0.028 * Math.sin((y / N) * TAU * 2) + 0.012 * Math.sin((y / N) * TAU * 5 + 1));
-}
-function pylonTop(j) {
-  return groundAt(lineX(j * PYLON + 16), j * PYLON + 16) + PYLON_H;
-}
-
 function groundAt(x, y) {
   return H[((Math.floor(y) & NM) << NS) | clamp(Math.floor(x), 0, NM)] * 0.5;
 }
@@ -595,7 +583,7 @@ function groundAt(x, y) {
 
 // The flyers are fighters in the likeness of two animals of the southern forests: Darwin's
 // frog (player one) and the monito del monte (player two). Both share one airframe, sculpted
-// in voxels — swept wings whose tips split like toes, twin fins and engines — and differ in the
+// in voxels — a delta wing, twin fins and engines — and differ in the
 // head: the frog has two bulging eyes and a long pointed snout; the monito a round head with
 // big dark eyes, round ears and a pink nose, and a thick tail behind. The shape is described
 // once, in design units (MW across the wings, ML nose to tail, MH tall), and cut into MK voxels
@@ -618,8 +606,8 @@ const NOZZLES = [
   [3, MPJ - 48, 0.5],
 ];
 const WINGTIPS = [
-  [-21, MPJ - 36, 0],
-  [21, MPJ - 36, 0],
+  [-21, MPJ - 38.5, 0],
+  [21, MPJ - 38.5, 0],
 ];
 
 const MODELS = [];
@@ -653,20 +641,15 @@ function partAt(x, y, z, who) {
     const top = Math.min(11.5, 6.5 + (y - 35.5) * 0.9);
     if (z < top && Math.abs(d - (3 + (z - 6) * 0.45)) < 0.55) return z > 8.6 && z > top - 1.6 ? HEAD : BODY;
   }
-  if (d < 10.5) {
-    // tailplanes
-    const le = 39.5 + d * 0.55;
-    if (y > le && y < 46.5 + d * 0.2 && Math.abs(z - 4) < 0.5 && (d < 7.5 || (y - le) % 3 < 2)) return BODY;
-  }
   if (d < 22.5) {
-    // wings: swept back, thick at the root and thin at the tips, which split like toes
-    const le = 16.5 + d * 0.62;
-    const te = 36.5 + d * 0.08;
+    // one delta wing: its leading edges run straight back from the nose to the tips, so from
+    // above the flyer is a triangle; thick at the root and thin at the tips
+    const le = 7 + d * 1.45;
+    const te = 41 - d * 0.1;
     if (y > le && y < te) {
-      if (d > 16.5 && ((y - le) % 3 > 2 || d > 22.5 - Math.floor((y - le) / 3) * 1.5)) return 0;
       const along = (y - le) / (te - le);
       const half = Math.max(0.5, (0.45 + 1.5 * (1 - d / 22)) * Math.sqrt(4 * along * (1 - along)));
-      if (Math.abs(z - 4.2) < half) return d > 4.5 && d < 15.5 && y > te - 5 && y < te - 2 ? PLUME : BODY;
+      if (Math.abs(z - 4.2) < half) return d > 4.5 && d < 17 && y > te - 5 && y < te - 2 ? PLUME : BODY;
     }
   }
   return 0;
@@ -741,7 +724,7 @@ function buildModel(who) {
         a.push(x);
         b.push(MPJ - y);
         c.push(z - MPK);
-        w.push(y < 39 && z < 6 ? Math.max(0, Math.abs(x) - WING_ROOT) : 0);
+        w.push(y < 42 && z < 6 ? Math.max(0, Math.abs(x) - WING_ROOT) : 0);
         // the body is coloured like the animal: its back on what faces up, then the pale line,
         // the stripe down its sides, and its belly underneath
         const up = l < 0.5 ? 1 : nz / l;
@@ -808,7 +791,6 @@ function makeFlyer(id) {
     inv: 0, // seconds of safety after a hit
     fireCd: 0,
     lock: null, // what its guns are tracking
-    side: 0, // which side of the power line it was on
     agl: 0, // its height above the ground
     dx: 0, // the last way its stick was thrown, to count the thrashing
     dy: 0,
@@ -1135,12 +1117,17 @@ function landNear(near, far, test) {
     const d = near + rand() * (far - near);
     const x = sq.x + Math.sin(a) * d;
     const y = sq.y - Math.cos(a) * d;
-    if (x > 4 && x < N - 4 && test(GR[cell(x, y)] / GS)) return [x, y];
+    if (x > 4 && x < N - 4 && test(x, y)) return [x, y];
   }
   return null;
 }
 
-const GREEN = (g) => g > 23 && g < 40;
+// Where a fire can take and be fought: green ground, low down in the open and near enough level.
+const GREEN = (x, y) => {
+  const g = GR[cell(x, y)] / GS;
+  const z = groundAt(x, y);
+  return g > 23 && g < 40 && z < 13 && Math.abs(groundAt(x + 5, y) - z) + Math.abs(groundAt(x, y + 5) - z) < 2;
+};
 
 function light(x, y) {
   fires.push({ x, y, z: groundAt(x, y) });
@@ -1163,7 +1150,11 @@ function findWater() {
 function startFire() {
   const at = landNear(110, 260, GREEN);
   if (!at) return false;
-  for (let i = 0; i < 5; i++) light(at[0] + spread() * 8, at[1] + spread() * 8);
+  for (let i = 0; i < 5; i++) {
+    const x = at[0] + spread() * 8;
+    const y = at[1] + spread() * 8;
+    if (!i || GREEN(x, y)) light(x, y);
+  }
   em = { k: 0, t: 0 };
   say('¡INCENDIO!');
   tell(1, '¡INCENDIO! SIGUE LA FLECHA AL AGUA, MOJA EL\nBALDE Y SUÉLTALA SOBRE EL FUEGO CON B5.', 8);
@@ -1440,18 +1431,7 @@ function simulate(dt) {
     }
 
     if (play) {
-      // the power line: the cables and the pylons are solid; slipping under the cables pays
-      const off = f.x - lineX(f.y);
-      const span = (f.y - 16) / PYLON;
-      const j = Math.floor(span);
-      const fr = span - j;
-      const wire = pylonTop(j) + (pylonTop(j + 1) - pylonTop(j)) * fr - ARM - SAG * 2 * Math.min(fr, 1 - fr);
-      if (Math.abs(off) < 3.4 && Math.abs(f.z - wire) < 0.9) hurt(f, 18, '¡CABLES!');
-      else if (Math.abs(off) < 1.6 && (fr < 0.06 || fr > 0.94) && f.z < wire + ARM) hurt(f, 25, '¡TORRE!');
-      else if (off * f.side < 0 && Math.abs(off) < 3 && f.z < wire) gain(120, 'BAJO LOS CABLES');
-      f.side = off;
-
-      // buildings are solid too
+      // buildings are solid
       for (const t of TOWNS) {
         const dy = f.y - t.y - Math.round((f.y - t.y) / N) * N; // the town's nearest self, north or south
         if (Math.abs(f.x - t.x) + Math.abs(dy) > 26) continue;
@@ -1698,7 +1678,7 @@ function simulate(dt) {
           const f = fires[(rand() * fires.length) | 0];
           const x = f.x + spread() * 10;
           const y = f.y + spread() * 10;
-          if (GREEN(GR[cell(x, y)] / GS)) light(x, y);
+          if (GREEN(x, y)) light(x, y);
           if (fires.length > 11) {
             say('INCENDIO FUERA DE CONTROL', 2.5);
             gLow = 0;
@@ -2380,8 +2360,6 @@ function slab(x, y, z, h, w, tone) {
   }
 }
 
-const colSteel = pack(72, 86, 108);
-const colCable = pack(44, 54, 72);
 const colRed = pack(255, 40, 70);
 const colShot = pack(200, 235, 255);
 const colFire = pack(255, 160, 60);
@@ -2456,25 +2434,6 @@ function drawThings() {
     const ty = t.y + Math.round((sq.y - t.y) / N) * N - t.y; // shift to its nearest self, north or south
     if (Math.abs(sq.x - t.x) + Math.abs(sq.y - t.y - ty) > 320) continue;
     for (let o = 0; o < t.b.length; o += 6) slab(t.b[o], t.b[o + 1] + ty, t.b[o + 2], t.b[o + 3], t.b[o + 4], t.b[o + 5]);
-  }
-  // the power line: each pylon is two legs and a crossarm, with a cable from each end of the
-  // arm sagging to the next pylon
-  const j0 = Math.floor(sq.y / PYLON);
-  for (let j = j0 - 7; j <= j0 + 7; j++) {
-    const y = j * PYLON + 16;
-    const x = lineX(y);
-    const top = pylonTop(j);
-    const x2 = lineX(y + PYLON);
-    const top2 = pylonTop(j + 1);
-    beam(x - 1.3, y, top - PYLON_H, x, y, top, 0.3, colSteel, 255);
-    beam(x + 1.3, y, top - PYLON_H, x, y, top, 0.3, colSteel, 255);
-    beam(x - 2.6, y, top - ARM, x + 2.6, y, top - ARM, 0.3, colSteel, 255);
-    for (let side = -2.6; side < 3; side += 5.2) {
-      const mx = (x + x2) / 2 + side;
-      const mz = (top + top2) / 2 - ARM - SAG;
-      beam(x + side, y, top - ARM, mx, y + PYLON / 2, mz, 0.1, colCable, 255);
-      beam(mx, y + PYLON / 2, mz, x2 + side, y + PYLON, top2 - ARM, 0.1, colCable, 255);
-    }
   }
   for (const s of shots) {
     if (!s.k) beam(s.x, s.y, s.z, s.x - s.vx * 0.025, s.y - s.vy * 0.025, s.z - s.vz * 0.025, 0.35, colShot, 255);
