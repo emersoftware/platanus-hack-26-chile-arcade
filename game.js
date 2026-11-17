@@ -908,6 +908,8 @@ let gMsg = '';
 let gMsgT = 0;
 let gShake = 0;
 let gFlash = 0;
+let demo = 0; // the title's show: which turn it is — a fire, or a rescue …
+let demoT = 0; // … and how long it has been going
 let gHit = 0; // the flash is a hit (red) and not a burst of light
 let gWhy = ''; // what hurt the crew last
 let pop = null; // points won, shown for a moment where they were won
@@ -1364,8 +1366,10 @@ function simulate(dt) {
     let lift = INVERT_Y ? -rawY : rawY;
     f.free = !rawY;
     if (!play) {
-      turn = Math.sin(now * 0.23) * 0.45; // out of play, it wanders by itself
-      lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + 16 - f.z) / 6, -1, 1);
+      // out of play it flies itself: wandering, or on the title making for the next thing to do
+      const g = fires[0] || folk[0];
+      turn = g ? clamp(wrapAngle(Math.atan2(g.x - f.x, f.y - g.y) - sq.yaw) * 2, -1, 1) : Math.sin(now * 0.23) * 0.45;
+      lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + (g ? 8 : 16) - f.z) / 6, -1, 1);
     } else if (gHacked) {
       turn = -turn;
       lift = -lift;
@@ -1584,6 +1588,31 @@ function simulate(dt) {
   }
   const cfx = Math.sin(cam.yaw); // the way the camera looks: enemies keep their station in front of it
   const cfy = -Math.cos(cam.yaw);
+
+  // ── the title's own show never stops: a forest fire put out with the bucket, then someone
+  // lifted off a river bank, and round again (a thing not reached in a while is dropped)
+  if (gMode === TITLE) {
+    const g = fires[0] || folk[0];
+    demoT += dt;
+    if (!g || demoT > 16) {
+      fires.length = folk.length = demoT = 0;
+      gWater = 3;
+      const at = landNear(70, 120, demo ? (x, y) => x > 170 && GR[cell(x, y)] <= G_SHALLOW * GS : WOOD); // (a river, not the sea)
+      if (at) {
+        if (demo) {
+          for (let n = 0; n < 40 && GR[cell(at[0], at[1])] <= G_SHALLOW * GS; n++) at[1]++; // out of the water, onto its bank
+          folk.push({ x: at[0], y: at[1] + 2, z: groundAt(at[0], at[1] + 2) });
+        } else for (let i = 0; i < 5; i++) light(at[0] + spread() * 5, at[1] + spread() * 5);
+        demo ^= 1; // the other one next
+      }
+    } else if (Math.hypot(g.x - lead.x, g.y - lead.y) < 7) {
+      if (fires[0]) douse(g.x, g.y, g.z);
+      else {
+        folk.length = 0;
+        puff(g.x, g.y, g.z + 1, 0, 0, 6, 0.5, 2, 2.4);
+      }
+    }
+  }
 
   // ── shots and loads of water
   for (let i = shots.length - 1; i >= 0; i--) {
@@ -2477,7 +2506,7 @@ function drawThings() {
   const goal = folk[0] || fires[0];
   if (goal) beam(goal.x, goal.y, goal.z + 30, goal.x, goal.y, goal.z + 150, 1.2, folk[0] ? colTrail : colFire, 80);
   if (wet) beam(wet.x, wet.y, wet.z + 8, wet.x, wet.y, wet.z + 150, 1.2, WATER, 110);
-  if (gMode === PLAY && (fires[0] || gWater)) {
+  if (gMode !== OVER && (fires[0] || gWater)) {
     // the buckets: pale when empty, blue with water in them, trailing a little behind
     for (const f of crew) {
       const x = f.x - Math.sin(f.yaw) * 2;
@@ -2540,7 +2569,7 @@ const WATER = pack(110, 180, 230);
 const EDGE = pack(12, 22, 38); // the dark edge (the lettering's is the same colour)
 const OFF = pack(44, 62, 84); // a lamp that is not lit
 const TOP = 16; // marks keep this far from the top of the screen …
-const VB = BH - 16; // … and stop here at the foot
+let VB = BH - 16; // … and stop here at the foot (higher, while the radio is talking)
 
 function box(x, y, w, h, colour) {
   const x0 = Math.max(0, x | 0);
@@ -2562,18 +2591,21 @@ const SIZES = [0, 24, 42, 63, 104, 176]; // a letter is 0.4 of its size wide: 4.
 let labelN = 0;
 let scene;
 // align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
-function text(str, x, y, colour, size, align) {
+// `plain` leaves off the dark edge, for lettering that has something solid behind it
+function text(str, x, y, colour, size, align, plain) {
   let t = LABELS[labelN++];
   if (!t) LABELS.push((t = scene.add.text(0, 0, '', { fontFamily: 'V, monospace' })));
   str = String(str);
   size = SIZES[size || 1];
+  const edge = plain ? 0 : Math.min(10, 2.5 + size / 12);
   if (t.text !== str) t.setText(str);
-  if (t.size !== size) t.setFontSize((t.size = size)).setStroke('#0c1626', Math.min(10, 2.5 + size / 12));
+  if (t.size !== size) t.setFontSize((t.size = size));
+  if (t.edge !== edge) t.setStroke('#0c1626', (t.edge = edge));
   if (t.ink !== colour) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
   }
-  t.setOrigin((align || 0) / 2, 0.2).setPosition(x * PX, y * PX).setVisible(true);
+  return t.setOrigin((align || 0) / 2, 0.2).setPosition(x * PX, y * PX).setScale(1).setVisible(true);
 }
 
 // The crew's portraits: their heads as voxel models, lit like the flyers, painted in front
@@ -2643,6 +2675,12 @@ function panel(y) {
       text(PANEL[n], x, row + 7, INK, 1, 1);
     } else disc(x, row, 5, OFF);
   }
+}
+
+// The game's name in solid letters: copies of it laid one behind another, each smaller and
+// lower, running back to a vanishing point under the middle of it.
+function logo(y) {
+  for (let i = 16; i >= 0; i--) text('2075', CXS, y + i * 1.5, i ? mix(pack(176, 112, 40), EDGE, i * 9) : GOLD, 5, 1, i).setScale(1 - i * 0.016);
 }
 
 // A name beside a mark: what it is, and what to do about it.
@@ -2741,12 +2779,12 @@ function drawHud() {
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     if (over) text('FIN DEL VUELO', CXS, 62, INK, 4, 1);
     else {
-      text('2075', CXS, 30, GOLD, 5, 1);
-      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 88, INK, 2, 1);
+      logo(26);
+      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 100, INK, 2, 1);
     }
     const naming = over && gName && gPos < 3;
     if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
-    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 104, GOLD, 2, 1);
+    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 118, GOLD, 2, 1);
     if (naming) {
       text('¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
       text([...gName].map((c, i) => (i === gPos && blink ? ' ' : c)).join(' '), CXS, 140, GOLD, 3, 1);
@@ -2830,10 +2868,14 @@ function drawHud() {
 
   // bottom middle: the radio — whoever is talking and the line as far as it has been said —
   // or, with the radio quiet, what the buttons do
+  VB = BH - (talk[1] ? 62 : 16);
   if (talk[1]) {
+    // on a ground of its own, so nothing in the scene shows through the words; the marks
+    // and their names keep above it
+    box(60, BH - 58, 282, 54, EDGE);
     face(talk[0], 92, BH - 30, 2.5);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 52, GOLD);
-    text(talk[1].slice(0, talkT * 40), 128, BH - 38, INK);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 53, GOLD, 1, 0, 1);
+    text(talk[1].slice(0, talkT * 40), 128, BH - 39, INK, 1, 0, 1);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
     if (!crew[1] && gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
@@ -2987,6 +3029,14 @@ function update(time, delta) {
     if (up || pressed.P1_U || pressed.P2_U) gName = gName.slice(0, gPos) + String.fromCharCode(65 + ((gName.charCodeAt(gPos) - 65 + (up ? 1 : 25)) % 26)) + gName.slice(gPos + 1);
     if ((go || gT > 40) && ++gPos > 2) saveTop();
   } else if (gMode !== PLAY && gT > 1 && go) startGame(pressed.START2);
+  else if (gMode === OVER && gT > 25) {
+    // left alone, the end screen gives way to the title and its show
+    gMode = TITLE;
+    crew.length = 1;
+    drones.length = 0;
+    em = sat = null;
+    resetFlight();
+  }
 
   let dt = Math.min(delta / 1000, 0.1);
   if (dt > 0.05) {
