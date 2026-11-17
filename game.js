@@ -893,6 +893,8 @@ let gMsg = '';
 let gMsgT = 0;
 let gShake = 0;
 let gFlash = 0;
+let gRain = 0; // how hard it is raining, 0 to 1
+let gBow = 0; // seconds of rainbow left once a storm has passed
 const drones = [];
 const shots = []; // k: 0 the crew's, 1 the enemy's, 2 a load of water
 const fires = [];
@@ -924,6 +926,7 @@ let OUT = null; // everything plays through this, which keeps it from clipping
 let NOISE = null;
 let ENGINE_TONE = null;
 let ENGINE_OPEN = null;
+let RAIN = null;
 let nextBeat = 0;
 let beatN = 0;
 let talkC = 0;
@@ -980,7 +983,18 @@ function sound() {
     g.gain.value = 0.045;
     ENGINE_TONE.connect(ENGINE_OPEN).connect(g).connect(OUT);
     ENGINE_TONE.start();
+    // rain: the same noise, thinned to a hiss, turned up while it falls
+    const hiss = AC.createBufferSource();
+    const thin = AC.createBiquadFilter();
+    RAIN = AC.createGain();
+    hiss.buffer = NOISE;
+    hiss.loop = true;
+    thin.type = 'highpass';
+    thin.frequency.value = 2200;
+    hiss.connect(thin).connect(RAIN).connect(OUT);
+    hiss.start();
   }
+  RAIN.gain.setTargetAtTime(gRain * 0.05, t, 0.3);
   const thr = gMode === OVER ? 0 : crew.reduce((sum, f) => sum + f.thr, 0) / crew.length;
   ENGINE_TONE.frequency.setTargetAtTime(44 + thr * 62, t, 0.08);
   ENGINE_OPEN.frequency.setTargetAtTime(110 + thr * 950, t, 0.08);
@@ -1091,7 +1105,7 @@ function join() {
 
 function startGame(two) {
   gMode = PLAY;
-  gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = 0;
+  gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = gRain = gBow = 0;
   gMult = 1;
   gShield = 100;
   gSpawnT = 4;
@@ -1203,7 +1217,8 @@ function startFire() {
   return true;
 }
 
-// A mudslide: it starts high in a ravine and runs down it, towards the people waiting below.
+// A storm, and then its mudslide: rain over the cordillera, until the mud lets go high in a
+// ravine and runs down it towards the people waiting below.
 function startFlood() {
   let best = -1;
   let bd = 1e9;
@@ -1243,12 +1258,13 @@ function startFlood() {
   }
   for (let i = 70; i < 230; i += 45) folk.push({ x: path[i * 2], y: path[i * 2 + 1], z: groundAt(path[i * 2], path[i * 2 + 1]), i });
   em = { k: 1, t: 0, path, at: 0, saved: 0 };
-  say('¡ALUVIÓN!');
-  tell(1, '¡ALUVIÓN! PASA BAJITO SOBRE LAS\nBALIZAS PARA RESCATAR A LA GENTE.', 16);
+  say('¡TORMENTA!');
+  tell(1, 'LLUEVE FUERTE EN LA CORDILLERA: SE VIENE UN\nALUVIÓN. PASA BAJITO SOBRE LAS BALIZAS.', 16);
   return true;
 }
 
 function endEmergency() {
+  if (em.k) gBow = 14; // after the storm, a rainbow
   em = null;
   fires.length = folk.length = 0;
   gEmT = 12 + rand() * 8;
@@ -1282,6 +1298,8 @@ function simulate(dt) {
   gMsgT -= dt;
   gShake *= Math.exp(-5 * dt);
   gFlash *= Math.exp(-4 * dt);
+  gRain += ((em && em.k ? 1 : 0) - gRain) * (1 - Math.exp(-0.8 * dt));
+  gBow -= dt;
   const play = gMode === PLAY;
   if (talk[1]) {
     // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
@@ -1728,8 +1746,15 @@ function simulate(dt) {
           }
         }
       } else {
-        // the mud runs down the ravine; anyone it reaches is lost
-        em.at = Math.min(em.path.length / 2 - 1, em.at + dt * 3.4);
+        // it rains for a while; then the mud runs down the ravine, and anyone it reaches is lost
+        if (em.t > 8) {
+          if (!em.at) say('¡ALUVIÓN!');
+          em.at = Math.min(em.path.length / 2 - 1, em.at + dt * 3.4);
+        }
+        if (rand() < dt * 0.3) {
+          gFlash = 0.6; // lightning, and its thunder a moment after
+          burst(1.6, 0.3, 0.4, 0.1);
+        }
         const o = (em.at | 0) * 2;
         em.x = em.path[o];
         em.y = em.path[o + 1];
@@ -2411,6 +2436,8 @@ function slab(x, y, z, h, w, tone) {
 
 const colRed = pack(255, 40, 70);
 const colShot = pack(200, 235, 255);
+const STORM = pack(56, 66, 92);
+const BOW = [pack(150, 90, 230), pack(70, 130, 255), pack(80, 220, 120), pack(255, 236, 90), pack(255, 160, 60), pack(255, 70, 80)];
 const colFire = pack(255, 160, 60);
 
 // The cast: drones, the satellite, fires, people, the mudslide, laser fences, shots.
@@ -2714,7 +2741,7 @@ function drawHud() {
 
   // top middle: the job in hand, and how it is done
   const duty = folk[0]
-    ? [`ALUVIÓN · ${folk.length} POR RESCATAR`, 'PASA BAJITO SOBRE CADA BALIZA']
+    ? [(em.at ? 'ALUVIÓN' : 'TORMENTA') + ` · ${folk.length} POR RESCATAR`, 'PASA BAJITO SOBRE CADA BALIZA']
     : goal
       ? [`INCENDIO · ${fires.length} FOCOS`, gWater ? 'SUELTA EL AGUA ENCIMA CON B5' : 'MOJA EL BALDE EN EL MAR O UN RÍO']
       : sat
@@ -2813,6 +2840,17 @@ function drawFrame() {
 
   drawWorld();
   drawSky();
+  if (gBow > 0) {
+    // a rainbow, standing on the horizon behind whatever is near
+    const a = Math.min(1, gBow / 3, (14 - gBow) / 3) * 130;
+    const by = cam.cy - (cam.S * cam.k) / cam.q + 50;
+    for (let y = 0; y < by && y < BH; y++) {
+      for (let x = 0, p = y * BW; x < BW; x++, p++) {
+        const d = Math.hypot(x - CXS - 40, y - by) - 150;
+        if (d >= 0 && d < 15 && ZB[p] > 250) FB[p] = mix(FB[p], BOW[(d / 2.5) | 0], a);
+      }
+    }
+  }
   if (alive) {
     for (const f of crew) {
       if (f.inv > 0 && (now * 12) & 1) continue; // it blinks while it is safe from harm
@@ -2822,6 +2860,19 @@ function drawFrame() {
   drawThings();
   if (alive) crew.forEach(drawTrails);
   drawPuffs();
+  if (gRain > 0.02) {
+    // a storm: the light goes grey, and the rain comes down slanting
+    for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], STORM, (gRain * 100) | 0);
+    for (let n = 0; n < gRain * 160; n++) {
+      const x = (n * 53.7 + now * 90) % (BW + 40);
+      const y = (n * 97.3 + now * (520 + (n % 7) * 45)) % (BH + 30);
+      for (let i = 0; i < 8; i++) {
+        const px = (x - i * 0.5) | 0;
+        const py = (y - i * 2) | 0;
+        if (px >= 0 && px < BW && py >= 0 && py < BH) FB[py * BW + px] = mix(FB[py * BW + px], colShot, 90);
+      }
+    }
+  }
   if (gMode === PLAY && !gHacked) crew.forEach(drawSight);
   if (gHacked || gChan > 0.4) glitch(gHacked ? 1 : gChan * 0.5);
   if (gFlash > 0.02) {
