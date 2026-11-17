@@ -650,15 +650,20 @@ function partAt(x, y, z, who) {
     return inEll(x, y - 24, z - 6.3, 7.5, 8.5, 6.2) || inEll(x, y - 14.5, z - 4.8, 3.4, 5, 2.9) ? BODY : 0;
   }
   if (who > 1) {
-    // Darwin's portrait: a flat head, from above a triangle with hollow sides, drawn out to a
-    // snout whose tip turns up; small golden eyes stand at its sides
-    if (inEll(d - 5.9, y - 27, z - 8.3, 1, 1.2, 1)) return ENGINE;
-    if (inEll(d - 5, y - 27, z - 7.7, 1.9, 2.1, 1.9)) return GLASS;
-    const t = (y - 7) / 26; // 0 at the tip of the snout, 1 where the head is widest
-    if (t < 0 || t > 1.2) return 0;
+    // Darwin's portrait, as the animal is: a wedge whose flat green back runs level out to
+    // the point of the snout, a ridge along each edge of it, the flanks falling away inwards
+    // under the ridge and the throat cut back hollow beneath the snout. Small dark eyes sit
+    // just under the ridge.
+    if (inEll(d - 4.1, y - 18, z - 8, 1, 1.1, 1)) return ENGINE;
+    if (inEll(d - 3.3, y - 18, z - 8, 1.7, 1.8, 1.7)) return GLASS;
+    // its throat, round under the jaw, and its forelegs
+    if (inEll(x, y - 17.5, z - 4.6, 3, 5.5, 3.2) || inEll(d - 5.2, y - 27 + (z - 3) * 0.6, z - 3, 1.5, 1.6, 3.2)) return BODY;
+    const t = (y - 7) / 26; // 0 at the tip of the snout, 1 where the body is widest
+    if (t < 0 || t > 1.25) return 0;
     const u = Math.min(t, 1);
-    const w = 0.9 + 9 * Math.pow(u, 1.7) * (t > 1 ? Math.sqrt(1 - ((t - 1) * 5) ** 2) : 1);
-    return d < w && Math.abs(z - 4.6 - 5.4 * (1 - u) ** 2) < (1 + 3.2 * Math.sqrt(u)) * Math.sqrt(1 - (d / w) ** 2) ? BODY : 0;
+    const foot = 9.3 - 9 * Math.pow(u, 0.6); // the underside: it drops away fast behind the tip
+    const h = (z - foot) / (10.5 - foot);
+    return h > 0 && z < 10.5 && d < (0.6 + 8 * Math.pow(u, 1.3)) * (t > 1 ? Math.sqrt(1 - ((t - 1) * 4) ** 2) : 1) * (0.45 + 0.55 * h) ? BODY : 0;
   }
   if (who) {
     if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
@@ -2586,7 +2591,7 @@ function text(str, x, y, colour, size, align) {
 const HEADS = [0, 1].map((id) => ({ id, ax: new Float32Array(9), thr: 0, flex: 0 }));
 function face(who, x, y, s, flip) {
   const f = HEADS[who];
-  const t = 0.85 + Math.sin(now * 1.4 + who) * 0.15;
+  const t = (who ? 0.85 : 0.3) + Math.sin(now * 1.4 + who) * 0.15;
   const c = Math.cos(t) * (flip ? -1 : 1);
   const n = Math.sin(t);
   const a = f.ax;
@@ -2597,10 +2602,10 @@ function face(who, x, y, s, flip) {
   a[2] = a[5] = a[6] = a[7] = 0;
   a[8] = 1;
   for (let i = 0; i < 9; i += 3) {
-    // tipped towards the viewer — the frog well over, to show the triangle of its head
+    // tipped a little towards the viewer, to show the top of the head
     const d = a[i] * fwdX + a[i + 1] * fwdY;
-    const tc = who ? 0.96 : 0.8;
-    const ts = who ? 0.28 : 0.6;
+    const tc = who ? 0.95 : 0.98; // (the frog hardly at all: it is known by its profile)
+    const ts = who ? 0.31 : 0.2;
     const e = d * tc - a[i + 2] * ts - d;
     a[i + 2] = d * ts + a[i + 2] * tc;
     a[i] += fwdX * e;
@@ -2633,17 +2638,19 @@ function key(n, x, y) {
     disc(x, y - 6, 3, INK);
   }
 }
-// What each does, in a row centred on the screen.
-const LEGEND = [[0, 'VOLAR'], [1, 'DISPARO'], [2], [3, 'TONEL'], [4, 'IMPULSO'], [5, 'AGUA']];
-function legend(y, colour) {
-  let x = CXS - 134;
-  for (const [n, word] of LEGEND) {
-    key(n, x + 6, y + 4);
-    x += 15;
-    if (word) {
-      text(word, x, y, colour);
-      x += word.length * 4.8 + 9;
-    }
+// The cabinet's panel as it is laid out, with what each control does: the stick to the left,
+// and two rows of three buttons (the sixth has no use).
+const PANEL = ['DISPARO', 'TONEL IZQ', 'TONEL DER', 'IMPULSO', 'AGUA'];
+function panel(y) {
+  key(0, CXS - 82, y + 18);
+  text('VOLAR', CXS - 82, y + 26, INK, 1, 1);
+  for (let n = 0; n < 6; n++) {
+    const x = CXS - 30 + (n % 3) * 52;
+    const row = y + 6 + ((n / 3) | 0) * 24;
+    if (n < 5) {
+      key(n + 1, x, row);
+      text(PANEL[n], x, row + 7, INK, 1, 1);
+    } else disc(x, row, 5, OFF);
   }
 }
 
@@ -2773,9 +2780,8 @@ function drawHud() {
     face(1, BW - 34, BH - 28, 2.5, 1);
     text('DARWIN', 66, BH - 52, GOLD);
     text('MONITO', BW - 66, BH - 52, GOLD, 1, 2);
-    legend(BH - 38, INK);
-    text('VUELA BAJO · APAGA INCENDIOS · RESCATA GENTE', CXS, BH - 24, DIM, 1, 1);
-    if (over && !naming && blink) text('START PARA VOLAR DE NUEVO', CXS, BH - 12, GOLD, 1, 1);
+    panel(BH - 60);
+    if (over && !naming && blink) text('START PARA VOLAR DE NUEVO', CXS, BH - 72, GOLD, 1, 1);
     return;
   }
 
@@ -2835,8 +2841,8 @@ function drawHud() {
     text(talk[1].slice(0, talkT * 40), 128, BH - 38, INK);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
-    if (!crew[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 32, GOLD, 1, 1);
-    legend(BH - 18, DIM);
+    if (!crew[1] && gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
+    panel(BH - 60);
   }
   radar(BW - 30, BH - 30, 24);
 
@@ -2851,8 +2857,8 @@ function drawHud() {
   if (crew[1]) for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
 
   if (!gScore && blink) {
-    key(1, CXS - 112, BH - 77);
-    text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 84, GOLD, 2, 1);
+    key(1, CXS - 112, BH - 71);
+    text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 78, GOLD, 2, 1);
   }
   if (pop && now < pop.t && project(pop.x, pop.y, pop.z)) text(pop.s, prX, prY - 22 + (pop.t - now) * 10, GOLD, 2, 1);
 
