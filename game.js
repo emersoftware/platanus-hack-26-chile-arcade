@@ -282,10 +282,11 @@ const GROUND = [
   [17, 240, 248, 250],
   [20, 214, 210, 198],
   [22, 150, 112, 78], // bare earth, and a river in flood
-  [24, 140, 176, 100],
-  [30, 98, 150, 86],
-  [36, 90, 122, 80],
-  [38.5, 44, 92, 58], // forest
+  [23, 112, 154, 84], // the green of a river's banks
+  [24.5, 198, 182, 116], // dry grass
+  [30, 168, 152, 96],
+  [36, 132, 124, 86],
+  [38.5, 52, 88, 50], // forest
   [42, 86, 118, 142],
   [48, 112, 149, 184],
   [54, 168, 200, 224],
@@ -458,6 +459,7 @@ function buildWorld(seed) {
   const fine = fbm(64, 4, rnd);
   const rough = fbm(128, 3, rnd);
   const E = new Float32Array(N * N); // elevation
+  const burnt = new Uint8Array(N * N); // where a fire went through, years ago
   QUEB.length = 0;
 
   for (let y = 0; y < N; y++) {
@@ -490,17 +492,29 @@ function buildWorld(seed) {
         e = clamp(e + (SNOWFIELD - e) * edge, 0.5, HMAX) * smooth(-0.004, 0.03, u - COAST); // the land comes up out of the sea
         if (cut < 0.004 && u > 0.43 && u < 0.47 && r % 5 === 0) QUEB.push(i);
 
-        // colour by height: green low down, then blue-grey rock and snow
+        // colour by height: dry grass low down, then blue-grey rock and snow
         if (u - COAST < 0.012) g = G_SAND;
         else if (cut < 0.024 && edge < 0.01) g = G_SHALLOW - 2; // river
         else {
           g = e < 6 ? 24 + e * 0.7 : e < 34 ? 28 + (e - 6) * 0.36 : e < 90 ? 38 + (e - 34) * 0.29 : 54 + (e - 90 + jit * 4) * 0.5;
-          if (e < 34) g += (f - 0.5) * 7 + (rough[i] - 0.5) * 5; // lighter and darker stretches of green
+          if (e < 34) g += (f - 0.5) * 7 + (rough[i] - 0.5) * 5; // lighter and darker stretches of it
+          if (cut < 0.042 && e < 9) g = 23 + jit * 0.6; // it is green along the rivers …
+          // … except where an old flood left its gravel and mud: bars along the banks, and a
+          // fan where each river comes out of the cordillera
+          const bar = cut < (u > 0.44 && u < 0.52 ? 0.11 : 0.055) && e < 12 && rough[(i + 91001) & (N * N - 1)] > 0.54;
+          if (bar) g = 21 + jit;
           // forests: over the hills and in patches across the valley, clear of the rivers and
           // the beach; their canopy stands a little proud of the ground, and uneven
-          if (e > 3.4 && e < 40 && cut > 0.045 && u - COAST > 0.03 && rough[(i + 300517) & (N * N - 1)] > (e > 9 ? 0.43 : 0.56)) {
-            g = 38.5 + jit * 2;
-            e += 1.3 + jit * 1.8;
+          if (!bar && e > 3.4 && e < 40 && cut > 0.045 && u - COAST > 0.03 && rough[(i + 300517) & (N * N - 1)] > (e > 9 ? 0.43 : 0.56)) {
+            if (fine[(i + 500009) & (N * N - 1)] > 0.62) {
+              // an old burn: dark bare ground where the forest was, and a few dead trunks
+              g = 35.5 + jit;
+              burnt[i] = 1;
+              if (r % 7 === 0) e += 1.6;
+            } else {
+              g = 38.5 + jit * 2;
+              e += 1.3 + jit * 1.8;
+            }
           }
         }
         g += (63 - g) * edge;
@@ -529,7 +543,7 @@ function buildWorld(seed) {
       const gx = (E[(y << NS) | Math.min(x + 1, NM)] - E[(y << NS) | Math.max(x - 1, 0)]) * 0.5;
       const gy = (E[dn | x] - E[up | x]) * 0.5;
       H[i] = Math.round(E[i] * 2);
-      LIT[i] = clamp(Math.round(LIT_FLAT + (lightOn(gx, gy) - 0.74) * 30), 0, NL - 1);
+      LIT[i] = clamp(Math.round(LIT_FLAT + (lightOn(gx, gy) - 0.74) * 30), 0, NL - 1) >> burnt[i]; // charred ground is dark
     }
   }
 
@@ -834,7 +848,31 @@ const SHOT = 240; // how fast the crew's shots fly
 let gMode = TITLE;
 let gT = 0; // seconds in this mode
 let gScore = 0;
-let gBest = 0;
+let gName = ''; // initials being entered for the table of records, if the flight earned a place
+let gPos = 0; // which of the three is being chosen
+// The five best flights, [initials, score], best first: kept by the cabinet between visits
+// (or by the browser, away from it).
+let BEST = [];
+const KEY = 'darwin3000.top';
+function loadTop() {
+  const take = (v) => {
+    if (Array.isArray(v)) BEST = v.filter((e) => Array.isArray(e) && e[1] > 0).slice(0, 5);
+  };
+  try {
+    const safe = window.platanusArcadeStorage;
+    if (safe) safe.get(KEY).then((r) => r.found && take(r.value), () => {});
+    else take(JSON.parse(localStorage.getItem(KEY)));
+  } catch (e) {}
+}
+function saveTop() {
+  BEST.push([gName, gScore]);
+  BEST.sort((a, b) => b[1] - a[1]).length = Math.min(5, BEST.length);
+  try {
+    const safe = window.platanusArcadeStorage;
+    if (safe) safe.set(KEY, BEST).catch(() => {});
+    else localStorage.setItem(KEY, JSON.stringify(BEST));
+  } catch (e) {}
+}
 let gMult = 1; // flying low multiplies every reward
 let gLow = 0;
 let gShield = 100; // one shield for the whole crew
@@ -1034,7 +1072,8 @@ function damage(d) {
   gMode = OVER;
   gT = 0;
   gHacked = 0;
-  if (gScore > gBest) gBest = gScore;
+  gName = gScore && (!BEST[4] || gScore > BEST[4][1]) ? 'AAA' : ''; // a place in the table: initials, then
+  gPos = 0;
 }
 
 function hurt(f, d, why) {
@@ -1152,6 +1191,8 @@ function light(x, y) {
   fires.push({ x, y, z: groundAt(x, y) });
 }
 
+// Fire weather, worse as the flight goes on: 0 a mild day, 1 the worst — heat, dry air and wind.
+const dry = () => Math.min(1, gT / 300);
 // A wildfire: a few fires in a forest, which spread through it until they are put out with
 // water from the sea or a river.
 // The sea or river nearest the crew: rings of places, further and further out, each looked
@@ -1181,8 +1222,9 @@ function startFire() {
   }
   em = { k: 0, t: 0 };
   siren();
-  say('¡INCENDIO!');
+  say('¡INCENDIO FORESTAL!');
   tell(1, '¡INCENDIO! SIGUE LA FLECHA AL AGUA, MOJA EL\nBALDE Y SUÉLTALA SOBRE EL FUEGO CON B5.', 8);
+  if (dry() > 0.3) tell(0, 'ALTAS TEMPERATURAS, BAJA HUMEDAD Y VIENTO\nFUERTE: EL FUEGO AVANZA MÁS RÁPIDO.', 512);
   return true;
 }
 
@@ -1678,12 +1720,13 @@ function simulate(dt) {
     } else {
       em.t += dt;
       if (!em.k) {
-        // the fire spreads; too many fires and it is beyond saving
-        if (em.t > 5) {
+        // the fire spreads, faster in fire weather and downwind; too many fires and it is
+        // beyond saving
+        if (em.t > 5 - dry() * 3) {
           em.t = 0;
           const f = fires[(rand() * fires.length) | 0];
-          const x = f.x + spread() * 10;
-          const y = f.y + spread() * 10;
+          const x = f.x + spread() * 10 - dry() * 7;
+          const y = f.y + spread() * 10 - dry() * 3;
           if (WOOD(x, y)) light(x, y);
           if (fires.length > 11) {
             say('INCENDIO FUERA DE CONTROL', 2.5);
@@ -2539,6 +2582,36 @@ function gauge(x, y, w, share, colour, h) {
   for (let i = 0; i < n; i++) box(x + i * 6, y, 5, h || 5, i < share * n ? colour : OFF);
 }
 
+function disc(x, y, r, colour) {
+  for (let d = -r; d <= r; d++) {
+    const w = Math.sqrt(r * r - d * d) | 0;
+    box(x - w, y + d, 2 * w + 1, 1, colour);
+  }
+}
+// One of the cabinet's buttons, by its number — or, for 0, its stick.
+function key(n, x, y) {
+  disc(x, y, 6, INK);
+  disc(x, y, 5, n ? EDGE : OFF);
+  if (n) text(n, x, y - 5, GOLD, 1, 1);
+  else {
+    box(x - 1, y - 5, 2, 6, DIM);
+    disc(x, y - 6, 3, INK);
+  }
+}
+// What each does, in a row centred on the screen.
+const LEGEND = [[0, 'VOLAR'], [1, 'DISPARO'], [2], [3, 'TONEL'], [4, 'IMPULSO'], [5, 'AGUA']];
+function legend(y, colour) {
+  let x = CXS - 134;
+  for (const [n, word] of LEGEND) {
+    key(n, x + 6, y + 4);
+    x += 15;
+    if (word) {
+      text(word, x, y, colour);
+      x += word.length * 4.8 + 9;
+    }
+  }
+}
+
 // A name beside a mark: what it is, and what to do about it.
 function tag(str, x, y, colour) {
   const w = str.length * 4.8 + 6;
@@ -2617,7 +2690,12 @@ function radar(cx, cy, R) {
   for (const d of drones) blip(d, colRed, d.k ? 3 : 2);
   if (sat) blip(sat, colRed, 3);
   if (wet) blip(wet, WATER, 3);
-  crew.forEach((f, i) => blip(f, i ? GOLD : INK, 2));
+  // the crew: arrowheads, nose up; and north, round the rim
+  crew.forEach((f, i) => {
+    blip(f, i ? GOLD : INK, 3);
+    for (let n = 1; n < 4; n++) box(cx + ((f.s * R) / 170) - n + 0.5, cy + n - 4, n * 2 - 1, 1, i ? GOLD : INK);
+  });
+  text('N', cx - sx * (R + 6), cy + sy * (R + 6) - 5, INK, 1, 1);
 }
 
 function drawHud() {
@@ -2629,30 +2707,40 @@ function drawHud() {
     text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 8, INK, 1, 1);
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     text(over ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 62, INK, 4, 1);
-    if (over) {
-      text('PUNTAJE ' + gScore + ' · RÉCORD ' + gBest, CXS, 104, GOLD, 2, 1);
-      text(
-        gWhy === '¡IMPACTO!'
-          ? 'CONSEJO: MANTÉN B1 Y DERRIBA LOS DRONES ANTES DE QUE DISPAREN'
-          : gWhy === 'HACK'
-            ? 'CONSEJO: SI TE HACKEAN, AGITA LA PALANCA Y MACHACA B1'
-            : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
-        CXS,
-        124,
-        INK,
-        1,
-        1,
-      );
-    }
+    const naming = over && gName && gPos < 3;
+    if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
     else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 104, GOLD, 2, 1);
+    if (naming) {
+      text('¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
+      text([...gName].map((c, i) => (i === gPos && blink ? ' ' : c)).join(' '), CXS, 140, GOLD, 3, 1);
+      key(0, CXS - 60, 180);
+      text('LETRA', CXS - 50, 176, DIM);
+      key(1, CXS + 16, 180);
+      text('SIGUIENTE', CXS + 26, 176, DIM);
+    } else {
+      if (over)
+        text(
+          gWhy === '¡IMPACTO!'
+            ? 'CONSEJO: MANTÉN EL BOTÓN 1 Y DERRIBA LOS DRONES ANTES DE QUE DISPAREN'
+            : gWhy === 'HACK'
+              ? 'CONSEJO: SI TE HACKEAN, AGITA LA PALANCA Y MACHACA EL BOTÓN 1'
+              : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
+          CXS,
+          124,
+          INK,
+          1,
+          1,
+        );
+      // the table of records
+      BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), CXS, 140 + i * 11, i ? DIM : GOLD, 1, 1));
+    }
     face(0, 6, BH - 54, 2);
     face(1, BW - 62, BH - 54, 2, 1);
     text('DARWIN', 66, BH - 52, GOLD);
     text('MONITO', BW - 66, BH - 52, GOLD, 1, 2);
-    text('PALANCA VOLAR · B1 DISPARO · B2/B3 TONEL', CXS, BH - 40, INK, 1, 1);
-    text('B4 IMPULSO · B5 AGUA · VUELA BAJO Y RESCATA', CXS, BH - 28, DIM, 1, 1);
-    if (!over) text('RÉCORD ' + gBest, CXS, BH - 16, DIM, 1, 1);
-    else if (blink) text('START PARA VOLAR DE NUEVO', CXS, BH - 16, GOLD, 1, 1);
+    legend(BH - 38, INK);
+    text('VUELA BAJO · APAGA INCENDIOS · RESCATA GENTE', CXS, BH - 24, DIM, 1, 1);
+    if (over && !naming && blink) text('START PARA VOLAR DE NUEVO', CXS, BH - 12, GOLD, 1, 1);
     return;
   }
 
@@ -2678,6 +2766,8 @@ function drawHud() {
         : ['PATRULLA', 'DERRIBA DRONES · VUELA BAJO'];
   text(duty[0], CXS, 5, goal || sat ? (blink ? GOLD : INK) : GOLD, 1, 1);
   text(duty[1], CXS, 17, INK, 1, 1);
+  // with a fire burning, the weather it burns in
+  if (fires[0]) text(`CALOR ${(30 + dry() * 12) | 0} · HUMEDAD ${(30 - dry() * 20) | 0} · VIENTO ${(20 + dry() * 50) | 0}`, CXS, 29, colFire, 1, 1);
 
   // top right: shield, boost (a row each with two aboard) and water
   text('ESCUDO', 288, 5, DIM);
@@ -2710,8 +2800,8 @@ function drawHud() {
     text(talk[1].slice(0, talkT * 40), 128, BH - 38, INK);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
-    if (!crew[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 29, GOLD, 1, 1);
-    text('B1 DISPARO · B2/B3 TONEL · B4 IMPULSO · B5 AGUA', CXS, BH - 16, DIM, 1, 1);
+    if (!crew[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 32, GOLD, 1, 1);
+    legend(BH - 18, DIM);
   }
   radar(BW - 30, BH - 30, 24);
 
@@ -2725,7 +2815,10 @@ function drawHud() {
   // with two aboard, each flyer wears its number
   if (crew[1]) for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
 
-  if (!gScore && blink) text('MANTÉN B1 PARA DISPARAR', CXS, BH - 84, GOLD, 2, 1);
+  if (!gScore && blink) {
+    key(1, CXS - 112, BH - 77);
+    text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 84, GOLD, 2, 1);
+  }
   if (pop && now < pop.t && project(pop.x, pop.y, pop.z)) text(pop.s, prX, prY - 22 + (pop.t - now) * 10, GOLD, 2, 1);
 
   // what is going on, across the top of the picture
@@ -2847,10 +2940,18 @@ function create() {
   mate.m = MODELS[1];
   buildWorld(SEED);
   resetFlight();
+  loadTop();
 }
 
 function update(time, delta) {
-  if (gMode !== PLAY && gT > 1 && (pressed.START1 || pressed.START2 || pressed.P1_1)) startGame(pressed.START2);
+  const go = pressed.START1 || pressed.START2 || pressed.P1_1 || pressed.P2_1;
+  if (gMode === OVER && gName && gPos < 3) {
+    // initials for the table: the stick changes the letter, a button takes it (and a
+    // cabinet left alone takes them as they stand)
+    const up = pressed.P1_D || pressed.P2_D;
+    if (up || pressed.P1_U || pressed.P2_U) gName = gName.slice(0, gPos) + String.fromCharCode(65 + ((gName.charCodeAt(gPos) - 65 + (up ? 1 : 25)) % 26)) + gName.slice(gPos + 1);
+    if ((go || gT > 40) && ++gPos > 2) saveTop();
+  } else if (gMode !== PLAY && gT > 1 && go) startGame(pressed.START2);
 
   let dt = Math.min(delta / 1000, 0.1);
   if (dt > 0.05) {
