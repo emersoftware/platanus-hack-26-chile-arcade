@@ -321,7 +321,7 @@ let MATERIALS = [
   [18, 46, 78, 124, 192, 226],
   [8, 12, 22, 58, 68, 90],
   [255, 70, 90, 255, 70, 90],
-  [255, 150, 50, 255, 170, 60],
+  [150, 62, 16, 255, 150, 44], // (the water bucket's orange)
   [58, 44, 34, 150, 122, 92],
 ];
 let NMAT = MATERIALS.length;
@@ -643,6 +643,13 @@ function inEll(x, y, z, rx, ry, rz) {
 // nose, z up. 0 is empty air.
 function partAt(x, y, z, who) {
   let d = Math.abs(x);
+  if (who > 3) {
+    // the water bucket: a cut-off cone, mouth up — a thin wall with a pale rim, a floor, and
+    // (in the second of the two) water to the brim
+    let r = Math.hypot(x, y - MPJ);
+    let R = 3.2 + z * 0.42;
+    return z > 9.5 || r > R ? 0 : z > 8.6 && r > R - 1.2 ? PLUME : r > R - 1.2 || z < 1.2 ? FIRE : who > 4 && z < 9.3 ? GLASS : 0;
+  }
   if (who > 2) {
     // the monito's portrait: a round head with big black eyes in a dark ring, round pink ears,
     // a short muzzle and a pink nose
@@ -2557,17 +2564,17 @@ function drawThings() {
     for (let f of crew) {
       let x = f.x - Math.sin(f.yaw) * 2;
       let y = f.y + Math.cos(f.yaw) * 2;
-      let z = Math.max(groundAt(x, y) + 0.5, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
+      let z = Math.max(groundAt(x, y) + 0.9, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
       beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
       if (project(x, y, z)) {
-        // a cut-off cone, mouth up: orange, lit on one side, with a pale rim — or, with water
-        // in it, a blue one
-        let r = prM * 0.8;
-        for (let i = 0; i < r * 1.5; i++) {
-          let w = r * (1 - i / r / 3.2);
-          box(prX - w, prY + i, w, 1, i < 2 ? (gWater ? WATER : INK) : colFire);
-          box(prX, prY + i, w, 1, i < 2 ? (gWater ? WATER : DIM) : mix(colFire, 0, 70));
-        }
+        // a model of its own, lit like the flyers: empty, or with water in it
+        let k = f.id * 2 + (gWater > 0);
+        let bk = BUCKETS[k] || (BUCKETS[k] = { id: -1, ax: new Float32Array(9), thr: 0, flex: 0, sunX: 0, sunY: 0, m: MODELS[4 + (gWater > 0)] });
+        bk.ax[0] = bk.ax[4] = Math.cos(f.yaw);
+        bk.ax[1] = Math.sin(f.yaw);
+        bk.ax[3] = -bk.ax[1];
+        bk.ax[8] = 1;
+        paint(bk, prX, prY, prV, prM * 0.13);
       }
     }
   }
@@ -2677,6 +2684,7 @@ function text(str, x, y, colour, size, align, plain) {
 // The crew's portraits: their heads as voxel models, lit like the flyers, painted in front
 // of everything — in profile, turned a little towards the viewer and never quite still.
 // `flip` faces it left.
+let BUCKETS = []; // the crew's water buckets as things to paint: one each, empty and full
 let HEADS = [0, 1].map((id) => ({ id, ax: new Float32Array(9), thr: 0, flex: 0 }));
 function face(who, x, y, s, flip) {
   let f = HEADS[who];
@@ -3178,7 +3186,7 @@ function create() {
   scene = this;
   AC = this.sound.context || null;
   buildPalettes();
-  for (let i = 0; i < 4; i++) buildModel(i);
+  for (let i = 0; i < 6; i++) buildModel(i);
   lead.m = MODELS[0];
   mate.m = MODELS[1];
   buildWorld(SEED);
