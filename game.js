@@ -859,7 +859,6 @@ let gHit = 0; // the flash is a hit (red) and not a burst of light
 let gWhy = ''; // what hurt the crew last
 let pop = null; // points won, shown for a moment where they were won
 let gRain = 0; // how hard it is raining, 0 to 1
-let gBow = 0; // seconds of rainbow left once a storm has passed
 const drones = [];
 const shots = []; // k: 0 the crew's, 1 the enemy's, 2 a load of water
 const fires = [];
@@ -1072,7 +1071,7 @@ function join() {
 
 function startGame(two) {
   gMode = PLAY;
-  gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = gRain = gBow = 0;
+  gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = gRain = 0;
   gMult = 1;
   gShield = 100;
   gSpawnT = 3; // one thing at a time: drones first, then an emergency, and the satellite last
@@ -1235,10 +1234,7 @@ function startFlood() {
 }
 
 function endEmergency() {
-  if (em && em.k) {
-    gBow = 14; // after the storm, a rainbow, and the river goes back into its bed
-    for (let i = 0; i < em.was.length; i += 2) GR[em.was[i]] = em.was[i + 1];
-  }
+  if (em && em.k) for (let i = 0; i < em.was.length; i += 2) GR[em.was[i]] = em.was[i + 1]; // the river goes back into its bed
   em = null;
   fires.length = folk.length = 0;
   gEmT = 12 + rand() * 8;
@@ -1273,7 +1269,6 @@ function simulate(dt) {
   gShake *= Math.exp(-5 * dt);
   gFlash *= Math.exp(-4 * dt);
   gRain += ((em && em.k ? 1 : 0) - gRain) * (1 - Math.exp(-0.8 * dt));
-  gBow -= dt;
   const play = gMode === PLAY;
   if (talk[1]) {
     // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
@@ -2379,7 +2374,6 @@ function beam(x1, y1, z1, x2, y2, z2, w, colour, alpha) {
 const colRed = pack(255, 40, 70);
 const colShot = pack(200, 235, 255);
 const STORM = pack(56, 66, 92);
-const BOW = [pack(150, 90, 230), pack(70, 130, 255), pack(80, 220, 120), pack(255, 236, 90), pack(255, 160, 60), pack(255, 70, 80)];
 const colFire = pack(255, 160, 60);
 
 // The cast: drones, the satellite, fires, people, the flood, shots.
@@ -2778,17 +2772,6 @@ function drawFrame() {
 
   drawWorld();
   drawSky();
-  if (gBow > 0) {
-    // a rainbow, standing on the horizon behind whatever is near
-    const a = Math.min(1, gBow / 3, (14 - gBow) / 3) * 130;
-    const by = cam.cy - (cam.S * cam.k) / cam.q + 50;
-    for (let y = 0; y < by && y < BH; y++) {
-      for (let x = 0, p = y * BW; x < BW; x++, p++) {
-        const d = Math.hypot(x - CXS - 40, y - by) - 150;
-        if (d >= 0 && d < 15 && ZB[p] > 250) FB[p] = mix(FB[p], BOW[(d / 2.5) | 0], a);
-      }
-    }
-  }
   if (alive) {
     for (const f of crew) {
       if (f.inv > 0 && (now * 12) & 1) continue; // it blinks while it is safe from harm
