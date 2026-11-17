@@ -2878,7 +2878,9 @@ function drawHud() {
           1,
         );
       // the table of records
-      BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), CXS, 140 + i * 11, i ? DIM : GOLD, 1, 1));
+      // (under the advice at the end of a flight; on the title down the left, clear of the show)
+      if (BEST[0] && !over) text('MEJORES VUELOS', 8, 150, INK);
+      BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), over ? CXS : 8, (over ? 140 : 163) + i * 11, i ? DIM : GOLD, 1, over));
     }
     face(0, 34, BH - 28, 2.5);
     face(1, BW - 34, BH - 28, 2.5, 1);
