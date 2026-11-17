@@ -813,6 +813,7 @@ function makeFlyer(id) {
     roll: 0,
     thr: 0.3,
     turn: 0,
+    hard: 0, // how long the stick has been held over one way: the turn tightens with it
     lift: 0,
     rollT: 0,
     rollDir: 1,
@@ -1384,6 +1385,10 @@ function simulate(dt) {
       if (pressed[k + '1']) gPurge += 0.07;
     }
     f.turn += (turn - f.turn) * (1 - Math.exp(-6 * dt));
+    // a tap of the stick is a fine correction; held over, the turn tightens until the flyer
+    // comes about in little more than its own length
+    f.hard = play && rawX && rawX === f.dir ? Math.min(1, f.hard + dt) : 0;
+    f.dir = rawX;
     f.lift += (lift - f.lift) * (1 - Math.exp(-5 * dt));
 
     // B4: a dash throws it forward, and holding it keeps the burners lit — for as long as
@@ -1435,7 +1440,7 @@ function simulate(dt) {
     } else f.roll = 0;
     if (!rawX) f.s += ((f.id ? 8 : -8) - f.s) * dt * 1.2; // hands off, it drifts back to its own side
     f.s = duo ? clamp(f.s, f.id ? lead.s + 10 : -15, f.id ? 15 : 5) : 0; // on screen, and never through its partner
-    turns += f.turn / n;
+    turns += (f.turn * (1 + f.hard * 1.3)) / n;
     pushes += push / n;
   }
   if (gHacked) {
