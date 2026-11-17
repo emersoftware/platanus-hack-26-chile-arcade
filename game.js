@@ -2596,16 +2596,19 @@ const SIZES = [0, 24, 42, 63, 104, 176]; // a letter is 0.4 of its size wide: 4.
 let labelN = 0;
 let scene;
 // align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
-// `plain` leaves off the dark edge, for lettering that has something solid behind it
+// `plain`: 1 leaves off the dark edge, for lettering that has something solid behind it; a
+// colour draws the edge in that colour instead and heavier — in the letters' own colour,
+// that is bold type
 function text(str, x, y, colour, size, align, plain) {
   let t = LABELS[labelN++];
   if (!t) LABELS.push((t = scene.add.text(0, 0, '', { fontFamily: 'V, monospace' })));
   str = String(str);
   size = SIZES[size || 1];
-  const edge = plain ? 0 : Math.min(10, 2.5 + size / 12);
+  const ink = plain && plain !== 1 ? plain : '#0c1626';
+  const edge = plain === 1 ? 0 : plain ? size / 19 : Math.min(10, 2.5 + size / 12);
   if (t.text !== str) t.setText(str);
   if (t.size !== size) t.setFontSize((t.size = size));
-  if (t.edge !== edge) t.setStroke('#0c1626', (t.edge = edge));
+  if (t.edge !== ink + edge) t.setStroke(ink, edge).setLetterSpacing(plain && plain !== 1 ? size / 16 : 0), (t.edge = ink + edge);
   if (t.ink !== colour) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
@@ -2682,10 +2685,10 @@ function panel(y) {
   }
 }
 
-// The game's name in solid letters with no edge: black copies of it laid one behind another,
+// The game's name in heavy red letters: black copies of it laid one behind another,
 // each smaller and lower, run back to a vanishing point under the middle of it.
 function logo(y) {
-  for (let i = 16; i >= 0; i--) text('2075', CXS, y + i * 1.5, i ? pack(0, 0, 0) : GOLD, 5, 1, 1).setScale(1 - i * 0.016);
+  for (let i = 16; i >= 0; i--) text('2075', CXS, y + i * 1.5, i ? pack(0, 0, 0) : pack(236, 28, 48), 5, 1, i ? '#000' : '#ec1c30').setScale(1 - i * 0.016);
 }
 
 // A name beside a mark: what it is, and what to do about it.
