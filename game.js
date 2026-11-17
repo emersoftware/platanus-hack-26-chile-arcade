@@ -1338,14 +1338,13 @@ function simulate(dt) {
   let play = gMode === PLAY;
   if (talk[1]) {
     // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
-    if (crew[1]) talk.length = 2; // with two aboard there is no radio: the line in hand is dropped at once
-    let c = ((talkT += crew[1] ? 99 : dt) * 40) | 0;
+    let c = ((talkT += dt) * 40) | 0;
     if (c !== talkC && c < talk[1].length && c % 3 === 0) {
       if (talk[0]) tone(1000 + rand() * 500, 1500, 0.04, 'square', 0.02);
       else tone(150 + rand() * 40, 90, 0.07, 'sawtooth', 0.045);
     }
     talkC = c;
-    if (talkT > talk[1].length * 0.03 + 2.6 || pressed.P1_6) {
+    if (talkT > talk[1].length * 0.03 + 2.6 || pressed.P1_6 || pressed.P2_6) {
       talk.splice(0, 2); // the line has been read: on to the next
       if (news) news--;
       talkT = 0;
@@ -2657,7 +2656,7 @@ function text(str, x, y, colour, size, align, plain) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
   }
-  t.setOrigin((align || 0) / 2, 0.2).setPosition((x + TX) * PX, (y + TY) * PX).setVisible(true);
+  t.setOrigin((align || 0) / 2, 0.2 / str.split('\n').length).setPosition((x + TX) * PX, (y + TY) * PX).setVisible(true);
 }
 
 // The crew's portraits: their heads as voxel models, lit like the flyers, painted in front
@@ -2809,7 +2808,7 @@ function mark(x, y, z, colour, label, always) {
 
 // The radar: what is around `o` — one of the crew — nose up.
 function radar(cx, cy, R, o) {
-  if (flat) disc(cx, cy, R, EDGE); // on a white card it has a dark face
+  if (flat) disc(cx, cy, R, pack(30, 100, 54)); // on a white card it has a green face
   for (let a = 0; a < TAU; a += 0.02) {
     // a ring, dark outside and pale inside, with nothing behind it
     for (let i = 0; i < 3; i++) box(cx + Math.sin(a) * (R + 1 - i), cy + Math.cos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
@@ -2896,13 +2895,11 @@ function drawHud() {
       : ['PATRULLA', 'DERRIBA DRONES · VUELA BAJO'];
   let weather = `CALOR ${(30 + dry() * 12) | 0} · HUMEDAD ${(30 - dry() * 20) | 0} · VIENTO ${(20 + dry() * 50) | 0}`;
   // With two aboard the picture is split — a view each, one above the other — and each has
-  // the same instruments beside their own view, in a column down the right: D is how far
-  // right that is (0 alone). There a long line is broken in two, to fit.
+  // the same instruments beside their own view, on a card of their own down the right: D is
+  // how far right that is (0 alone).
   let D = crew[1] ? 260 : 0;
-  let fit = (s) => {
-    let i = s.lastIndexOf(' ', s.length / 2 + 4);
-    return s.length > 26 ? s.slice(0, i) + '\n' + s.slice(i + 1) : s;
-  };
+  // (there a line is broken to the card's width)
+  let wrap = (s) => s.replace(/\n/g, ' ').replace(/(.{1,27})( |$)/g, '$1\n').trim();
   if (D) {
     box(260, 0, 140, BH, 0xff000000);
     box(0, 149, 260, 2, OFF);
@@ -2911,12 +2908,16 @@ function drawHud() {
   (D ? crew : [lead]).forEach((f, i) => {
     let oy = i * 150;
     let ink = f.id ? GOLD : INK;
-    if (D) card(261, oy + 1, 138, 148);
+    let hx = D ? 298 : 6; // the score stands beside their face, on a card
+    if (D) {
+      card(261, oy + 1, 138, 148);
+      face(i, 280, oy + 21, 1.1);
+    }
     // the score (their own, with two), the multiplier, and how long the crew has kept low
-    text('PUNTAJE', D + 6, oy + 5, DIM);
-    if (gAgl < 8) text('VUELO BAJO', D + 116, oy + 5, GOLD, 1, 2);
-    text(String(D ? f.sc : gScore).padStart(6, '0'), D + 6, oy + 16, ink, 2);
-    text('×' + gMult, D + 116, oy + 16, gMult > 1 ? GOLD : DIM, 2, 2);
+    text(D ? (i ? 'MONITO' : 'DARWIN') : 'PUNTAJE', hx, oy + 5, D ? colRed : DIM);
+    if (gAgl < 8 && !D) text('VUELO BAJO', 116, 5, GOLD, 1, 2);
+    text(String(D ? f.sc : gScore).padStart(6, '0'), hx, oy + 16, ink, 2);
+    text('×' + gMult, D ? 393 : 116, oy + 16, gMult > 1 ? GOLD : DIM, 2, 2);
     if (gLow > 0.1) {
       box(D + 5, oy + 32, (gLow / 10) * 110 + 2, 4, EDGE);
       box(D + 6, oy + 33, (gLow / 10) * 110, 2, GOLD);
@@ -2937,20 +2938,25 @@ function drawHud() {
 
     // height: the ground rising from the foot of the scale, the cloud base and the
     // stratosphere ruled across it, and the flyer
-    let foot = D ? oy + 145 : BH - 6;
-    let rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * 34;
-    box(D + 5, foot - 35, 6, 36, OFF);
+    let foot = D ? oy + 146 : BH - 6;
+    let tall = D ? 26 : 34;
+    let rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * tall;
+    box(D + 5, foot - tall - 1, 6, tall + 2, OFF);
     box(D + 6, rung(gGnd), 4, foot - rung(gGnd), DIM);
     box(D + 4, rung(CA), 8, 1, INK);
     box(D + 4, rung(STRATO), 8, 1, INK);
     box(D + 3, rung(f.z) - 1, 10, 2, ink);
-    text('ALTURA', D + 18, foot - (D ? 34 : 38), DIM);
-    text((f.agl | 0) * 10, D + 18, foot - (D ? 24 : 28), INK, 2); // in tens: every change of a label is a redraw of it
-    radar(D ? 374 : BW - 30, D ? oy + 127 : BH - 30, D ? 17 : 24, f);
+    text('ALTURA', D + 18, foot - (D ? 27 : 38), DIM);
+    text((f.agl | 0) * 10, D + 18, foot - (D ? 18 : 28), INK, 2); // in tens: every change of a label is a redraw of it
+    radar(D ? 378 : BW - 30, D ? oy + 131 : BH - 30, D ? 14 : 24, f);
     if (D) {
-      // the job in hand; and the news, or how the job is done
-      text(duty[0], 266, oy + 73, GOLD);
-      text(fit(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 85, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
+      // what they are saying, if it is they who speak; else the job in hand, and the news or
+      // how the job is done
+      if (talk[1] && talk[0] === i) text(wrap(talk[1]).slice(0, ((talkT * 13) | 0) * 3), 266, oy + 69, INK);
+      else {
+        text(duty[0], 266, oy + 69, GOLD);
+        text(wrap(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 81, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
+      }
     }
   });
   flat = 0;
@@ -2988,7 +2994,7 @@ function drawHud() {
     card(112, BH - 61, w, 56);
     face(talk[0], 82, BH - 30, 2.5);
     text((talk[0] ? 'MONITO' : 'DARWIN') + ' · BOTÓN 6: SALTAR', 123, BH - 54, colRed, 1, 0, 1);
-    text(talk[1].slice(0, ((talkT * 13) | 0) * 3), 123, BH - 40, EDGE, 1, 0, 1);
+    text(talk[1].slice(0, ((talkT * 13) | 0) * 3), 123, BH - 42, EDGE, 1, 0, 1);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
     if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
