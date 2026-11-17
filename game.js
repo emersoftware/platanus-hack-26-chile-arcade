@@ -2673,6 +2673,8 @@ const FONT =
 const LABELS = [];
 const SIZES = [0, 24, 42, 63, 104]; // a letter is 0.4 of its size wide: 4.8 of the picture's pixels in the smallest
 let labelN = 0;
+let lit = 0; // the buttons that lettering on screen names this frame, a bit each …
+let was = 0; // … and those it named in the last: the panel shows them lit
 let scene;
 // align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
 // `plain` leaves off the dark edge, for lettering that has something solid behind it
@@ -2682,6 +2684,7 @@ function text(str, x, y, colour, size, align, plain) {
   str = String(str);
   size = SIZES[size || 1];
   const edge = plain ? 0 : Math.min(10, 2.5 + size / 12);
+  for (const m of str.matchAll(/B(?:OTÓN )?([1-6])|(?:CON|EL|O) ([1-6])\b/g)) lit |= 1 << (m[1] || m[2]);
   if (t.text !== str) t.setText(str);
   if (t.size !== size) t.setFontSize((t.size = size));
   if (t.edge !== edge) t.setStroke('#0c1626', (t.edge = edge)).setLineSpacing(-edge * 2 - 4); // (the edge would space the lines out)
@@ -2748,16 +2751,21 @@ function key(n, x, y) {
 // The cabinet's panel as it is laid out, with what each control does: the stick to the left,
 // and two rows of three buttons (the sixth has no use).
 const PANEL = ['DISPARO', 'GIRO IZQ', 'GIRO DER', 'IMPULSO', 'AGUA'];
-function panel(y) {
-  key(0, CXS - 82, y + 18);
-  text('VOLAR', CXS - 82, y + 26, INK, 1, 1);
+// Any button that lettering on screen names is ringed in gold. Given an `x`, it is a small
+// panel there, with no names: shown wherever a button is spoken of.
+function panel(y, x) {
+  const g = x ? 15 : 52; // from one button to the next …
+  const r = x ? 14 : 24; // … and from one row to the other
+  x = x || CXS - 30;
+  key(0, x - g - (g > 15 ? 0 : 3), y + 6 + r / 2);
+  if (g > 15) text('VOLAR', x - g, y + 26, INK, 1, 1);
   for (let n = 0; n < 6; n++) {
-    const x = CXS - 30 + (n % 3) * 52;
-    const row = y + 6 + ((n / 3) | 0) * 24;
-    if (n < 5) {
-      key(n + 1, x, row);
-      text(PANEL[n], x, row + 7, INK, 1, 1);
-    } else disc(x, row, 5, OFF);
+    const px = x + (n % 3) * g;
+    const py = y + 6 + ((n / 3) | 0) * r;
+    if ((was >> (n + 1)) & 1) disc(px, py, 8, GOLD);
+    if (n < 5 || was & 64) key(n + 1, px, py);
+    else disc(px, py, 5, OFF);
+    if (g > 15 && n < 5) text(PANEL[n], px, py + 7, INK, 1, 1);
   }
 }
 
@@ -2969,6 +2977,7 @@ function drawHud() {
     if (D) {
       // which view is whose; the job in hand; and the news, or how the job is done
       text(i + 1, 4, oy + 3, ink);
+      if (was) panel(oy + 4, 214);
       text(duty[0], 266, oy + 73, GOLD);
       text(fit(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 85, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
     }
@@ -3008,7 +3017,8 @@ function drawHud() {
     // with the radio quiet, for the first minute: what the buttons do
     if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
     panel(BH - 60);
-  }
+  } else if (was) panel(BH - 98, 332);
+  if (was && talk[1]) panel(BH - 98, 332);
   if (!gScore && drones[0] && blink) {
     key(1, CXS - 112, BH - 71);
     text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 78, GOLD, 2, 1);
@@ -3094,6 +3104,8 @@ function drawFrame() {
 
   for (const t of LABELS) t.setVisible(false);
   labelN = 0;
+  was = lit;
+  lit = 0;
   if (gMode === PLAY && crew[1]) {
     // two aboard: a view each, 260 by 150, cut from the middle of the picture as each one's
     // own camera sees it and laid one above the other down the left
