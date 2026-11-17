@@ -1145,10 +1145,12 @@ function startGame(two) {
   Object.assign(lead, { s: 0, sc: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
   talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
-  tell(0, 'MANTÉN B1 PARA DISPARAR Y APUNTA\nCON LA NARIZ A LOS DRONES.');
-  tell(0, 'AÑO 2075. ENTRE INCENDIOS Y ALUVIONES,\nLAS IA ENEMIGAS NOS ATACAN CON DRONES.');
-  tell(1, 'LA BIOINGENIERÍA NOS HIZO SÚPER LISTOS:\nPILOTEAMOS MEJOR QUE CUALQUIER IA.');
-  tell(0, 'VUELA BAJO PARA MULTIPLICAR LOS PUNTOS:\nPALANCA ATRÁS SUBE, ADELANTE BAJA.');
+  // the briefing: what there is to do and how, one thing at a time, before anything happens
+  tell(0, 'AÑO 2075. FUEGO, ALUVIONES Y DRONES DE IA\nENEMIGA: NOSOTROS SOMOS EL RESCATE.');
+  tell(1, 'PALANCA: ATRÁS SUBE, ADELANTE BAJA.\nMANTENLA A UN LADO PARA VIRAR EN SECO.');
+  tell(0, 'BOTÓN 1 DISPARA. LOS DRONES ORBITAN Y SE\nLANZAN: DERRÍBALOS O ESQUIVA CON 2 O 3.');
+  tell(1, 'BOTÓN 4 DA IMPULSO. VOLAR BAJO\nMULTIPLICA LOS PUNTOS.');
+  tell(0, 'SIGUE LAS FLECHAS: MOJA EL BALDE Y SUELTA EL\nAGUA CON EL 5. PASA BAJITO SOBRE LA GENTE.');
   if (two) join();
 }
 
@@ -1193,7 +1195,7 @@ function spawnDrone(k) {
   // circling the crew (for less time the longer the flight has lasted), and then dives at one
   // of them; a hacker takes enough killing to get its hack started
   const side = rand() < 0.5 ? -1 : 1;
-  drones.push({ k, hp: k ? 12 : 2 + Math.min(3, (gT / 90) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: 0 });
+  drones.push({ k, hp: k ? 12 : 2 + Math.min(3, (gT / 90) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: sq.z + 8 });
 }
 
 // A spot of ground near the squad, mostly ahead of it, that passes the test.
@@ -1347,7 +1349,7 @@ function simulate(dt) {
       else tone(150 + rand() * 40, 90, 0.07, 'sawtooth', 0.045);
     }
     talkC = c;
-    if (talkT > talk[1].length * 0.03 + 2.6) {
+    if (talkT > talk[1].length * 0.03 + 2.6 || pressed.P1_6) {
       talk.splice(0, 2); // the line has been read: on to the next
       if (news) news--;
       talkT = 0;
@@ -1732,14 +1734,15 @@ function simulate(dt) {
     }
     d.x = sq.x + cfx * d.a - cfy * d.s;
     d.y = sq.y + cfy * d.a + cfx * d.s;
-    d.z = Math.max(sq.z + d.u, groundAt(d.x, d.y) + 3);
+    // over the ground, and over whatever stands between it and the crew — easing up and
+    // down, never jumping
+    d.z += (Math.max(sq.z + d.u, groundAt(d.x, d.y) + 4, groundAt((d.x + sq.x) / 2, (d.y + sq.y) / 2) + 2) - d.z) * Math.min(1, dt * 5);
     if (!play) continue;
     if (!d.k) {
       d.cd -= dt;
       if (d.cd < 0 && !kz) {
         d.kz = crew[(rand() * n) | 0];
         tone(300, 1100, 0.5, 'sawtooth', 0.07); // it winds up
-        tell(1, 'LOS DRONES ORBITAN Y LUEGO SE LANZAN:\nDERRÍBALOS O ESQUÍVALOS CON UN GIRO.', 1);
       }
     } else if (!gHacked && gImmune <= 0 && d.a < 70) {
       d.ch = rolling ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
@@ -1755,7 +1758,9 @@ function simulate(dt) {
   }
 
   if (play) {
-    gSpawnT -= dt;
+    // nothing new begins while the radio is talking over a quiet sky
+    const tick = talk[1] && !drones[0] && !em ? 0 : dt;
+    gSpawnT -= tick;
     if (gSpawnT < 0 && drones.length < Math.min(6, 1 + n + ((gT / 25) | 0))) {
       gSpawnT = Math.max(2.5, 7 - gT / 30) / n;
       spawnDrone(0);
@@ -1764,7 +1769,7 @@ function simulate(dt) {
     // ── the hackers' satellite, far up in the stratosphere: while it is there it keeps
     // sending hacker drones down
     if (!sat) {
-      gSatT -= dt;
+      gSatT -= tick;
       if (gSatT < 0) {
         sat = { x: sq.x + cfx * 90, y: sq.y + cfy * 90, z: 285, hp: 40, r: 4.5, cd: 3 };
         tell(1, 'EL SATÉLITE HACKER ESTÁ EN LA\nESTRATÓSFERA. SUBE Y DESTRÚYELO.', 32);
@@ -1800,7 +1805,7 @@ function simulate(dt) {
 
     // ── emergencies, one at a time: a wildfire, then a mudslide, and round again
     if (!em) {
-      gEmT -= dt;
+      gEmT -= tick;
       if (gEmT < 0) {
         if (gEmN++ & 1 ? startFlood() : startFire()) gEmT = 0;
         else gEmT = 2;
@@ -1962,6 +1967,7 @@ function shadowed(relX, relY, h) {
 // smooth instead of stepped.
 // The part of the buffer the world is drawn into: all of it, or (for a split screen) the
 // columns VX0 to VX1 and the rows above VYB.
+let coarse = 1; // how much longer than usual the steps into the distance are: more, on a slow machine
 let VX0 = 0;
 let VX1 = BW;
 let VYB = BH;
@@ -1986,14 +1992,15 @@ function drawWorld() {
   const near = (NEAR_W - 1) / q;
   if (v < near || zr + k / q < ZTOP + 2) v = near;
 
+  const cs = coarse > 1.7 ? 2 : 1; // a machine well behind draws every other column only
   let open = VX1 - VX0;
   while (v < view && open > 0) {
     const w = 1 + q * v;
     const m = S / w;
     const inv = w / S;
     let dv = (w * w) / A;
-    if (dv < DV_MIN * inv) dv = DV_MIN * inv;
-    else if (dv > DV_MAX * inv) dv = DV_MAX * inv;
+    if (dv < DV_MIN * inv * coarse) dv = DV_MIN * inv * coarse;
+    else if (dv > DV_MAX * inv * coarse) dv = DV_MAX * inv * coarse;
     const v2 = v + dv;
     const m2 = S / (1 + q * v2);
     const b1 = cy - m * (k * v - zr); // row of height 0 at the near edge of this step …
@@ -2008,10 +2015,10 @@ function drawWorld() {
 
     let relX = fwdX * v - rgtX * (CXS - VX0) * inv;
     let relY = fwdY * v - rgtY * (CXS - VX0) * inv;
-    const stepX = rgtX * inv;
-    const stepY = rgtY * inv;
+    const stepX = rgtX * inv * cs;
+    const stepY = rgtY * inv * cs;
 
-    for (let x = VX0; x < VX1; x++, relX += stepX, relY += stepY) {
+    for (let x = VX0; x < VX1; x += cs, relX += stepX, relY += stepY) {
       const yb = YB[x];
       if (yb <= 0) continue;
       const wx = relX + camX;
@@ -2150,9 +2157,18 @@ function drawWorld() {
         }
       }
       YB[x] = ya;
-      if (ya <= 0) open--;
+      if (ya <= 0) open -= cs;
     }
     v = v2;
+  }
+  // at half width, each column drawn stands for the one beside it too
+  if (cs > 1) {
+    for (let p = 0; p < BW * BH; p += 2) {
+      FB[p + 1] = FB[p];
+      ZB[p + 1] = ZB[p];
+      PA[p + 1] = PA[p];
+      PC[p + 1] = PC[p];
+    }
   }
 }
 
@@ -2909,7 +2925,7 @@ function drawHud() {
     return s.length > 26 ? s.slice(0, i) + '\n' + s.slice(i + 1) : s;
   };
   if (D) {
-    box(260, 0, 140, BH, EDGE);
+    box(260, 0, 140, BH, pack(SKY_TOP[0], SKY_TOP[1], SKY_TOP[2])); // in the sky's own blue
     box(0, 149, BW, 2, OFF);
   }
   (D ? crew : [lead]).forEach((f, i) => {
@@ -2945,7 +2961,7 @@ function drawHud() {
     box(D + 4, rung(STRATO), 8, 1, INK);
     box(D + 3, rung(f.z) - 1, 10, 2, ink);
     text('ALTURA', D + 18, foot - 38, DIM);
-    text((f.agl * 10) | 0, D + 18, foot - 28, INK, 2);
+    text((f.agl | 0) * 10, D + 18, foot - 28, INK, 2); // in tens: every change of a label is a redraw of it
     radar(D ? 372 : BW - 30, D ? oy + 124 : BH - 30, D ? 19 : 24, f);
     if (D) {
       // which view is whose; the job in hand; and the news, or how the job is done
@@ -2974,18 +2990,18 @@ function drawHud() {
   // bottom middle: the radio — whoever is talking and the line as far as it has been said —
   // or, with the radio quiet, what the buttons do
   if (talk[1]) {
-    // black words on a white card of their own, as wide as the longer line, so nothing in the
+    // dark words on a pale blue card of their own, as wide as the longer line, so nothing in the
     // scene shows through them (the marks and their names keep above it); the head stands free
-    box(124, BH - 57, Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 10, 46, INK);
+    box(124, BH - 57, Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 10, 46, colHaze);
     face(talk[0], 92, BH - 30, 2.5);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 129, BH - 53, colRed, 1, 0, 1);
-    text(talk[1].slice(0, talkT * 40), 129, BH - 40, EDGE, 1, 0, 1);
+    text((talk[0] ? 'MONITO' : 'DARWIN') + ' · BOTÓN 6: SALTAR', 129, BH - 53, colRed, 1, 0, 1);
+    text(talk[1].slice(0, ((talkT * 13) | 0) * 3), 129, BH - 40, EDGE, 1, 0, 1);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
     if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
     panel(BH - 60);
   }
-  if (!gScore && blink) {
+  if (!gScore && drones[0] && blink) {
     key(1, CXS - 112, BH - 71);
     text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 78, GOLD, 2, 1);
   }
@@ -3184,6 +3200,7 @@ function update(time, delta) {
   const t0 = performance.now();
   drawFrame();
   drawMs += (performance.now() - t0 - drawMs) * 0.1;
+  coarse = clamp(coarse + (drawMs > 12 ? 0.03 : drawMs < 5 ? -0.03 : 0), 1, 2.4); // a slow machine draws the distance in longer steps, and then at half width
   frameTex.context.putImageData(frameData, 0, 0);
   frameTex.refresh();
 
