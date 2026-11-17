@@ -893,6 +893,9 @@ let gMsg = '';
 let gMsgT = 0;
 let gShake = 0;
 let gFlash = 0;
+let gHit = 0; // the flash is a hit (red) and not a burst of light
+let gWhy = ''; // what hurt the crew last
+let pop = null; // points won, shown for a moment where they were won
 let gRain = 0; // how hard it is raining, 0 to 1
 let gBow = 0; // seconds of rainbow left once a storm has passed
 const drones = [];
@@ -912,10 +915,11 @@ const QUEB = []; // cells in the ravines of the cordillera, where mudslides star
 const talk = []; // who, line, who, line …
 let talkT = 0;
 let told = 0;
+let news = 0; // lines of news waiting their turn
 function tell(who, line, once) {
   if (told & once) return;
   told |= once;
-  if (once) talk.splice(2, 0, who, line); // news comes next, ahead of the story
+  if (once) talk.splice(2 + 2 * news++, 0, who, line); // news comes ahead of the story, in the order it happened
   else talk.push(who, line);
 }
 
@@ -1078,6 +1082,8 @@ function hurt(f, d, why) {
   f.inv = 1;
   gShake = 1;
   gFlash = 0.5;
+  gHit = 1;
+  gWhy = why;
   say(why, 1.2);
   tone(220, 50, 0.35, 'sawtooth', 0.2);
   burst(0.15, 0.15);
@@ -1108,20 +1114,21 @@ function startGame(two) {
   gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = gRain = gBow = 0;
   gMult = 1;
   gShield = 100;
-  gSpawnT = 4;
+  gSpawnT = 3; // one thing at a time: drones first, then a fence, an emergency, and the satellite last
   gHackT = 20;
-  gFenceT = 9;
-  gEmT = 10;
-  gSatT = 14;
+  gFenceT = 25;
+  gEmT = 40;
+  gSatT = 110;
   drones.length = shots.length = fires.length = folk.length = fences.length = 0;
   sat = em = null;
   crew.length = 1;
-  Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: Math.max(lead.z, groundAt(lead.x, lead.y) + 20) });
-  talk.length = talkT = told = 0;
+  Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
+  talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
+  tell(0, 'MANTÉN B1 PARA DISPARAR Y APUNTA\nCON LA NARIZ A LOS DRONES.');
   tell(0, 'AÑO 3000. LAS IA ENEMIGAS\nNOS ATACAN CON SUS DRONES.');
   tell(1, 'LA BIOINGENIERÍA NOS HIZO SÚPER LISTOS:\nPILOTEAMOS MEJOR QUE CUALQUIER IA.');
-  tell(0, 'DISPARA CON B1. VUELA BAJO\nPARA MULTIPLICAR LOS PUNTOS.');
+  tell(0, 'VUELA BAJO PARA MULTIPLICAR LOS PUNTOS:\nPALANCA ATRÁS SUBE, ADELANTE BAJA.');
   if (two) join();
 }
 
@@ -1162,8 +1169,9 @@ function modelPoint(f, ma, mb, mc, out, o) {
 
 function spawnDrone(k) {
   if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ\nUN TONEL ANTES DE QUE ENTRE.', 2);
-  else tell(0, '¡DRONES IA AL FRENTE!\nAPUNTA CON LA NARIZ Y DISPARA.', 1);
-  drones.push({ k, hp: k ? 4 : 2, r: k ? 1.9 : 1.5, a: 190, s: spread() * 50, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: 1.5 + rand(), ch: 0, x: 0, y: 0, z: 0 });
+  // they come in from one flank or the other, tougher as the flight goes on; the first ones
+  // hold their fire a while, and a hacker takes enough killing to get its hack started
+  drones.push({ k, hp: k ? 12 : 2 + Math.min(3, (gT / 90) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: rand() < 0.5 ? -110 : 110, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: gT < 30 ? 6 : 1.5 + rand(), ch: 0, x: 0, y: 0, z: 0 });
 }
 
 // A spot of ground near the squad, mostly ahead of it, that passes the test.
@@ -1203,6 +1211,10 @@ function findWater() {
     }
   }
 }
+function siren() {
+  tone(880, 440, 0.4, 'square', 0.06);
+  tone(880, 440, 0.4, 'square', 0.06, 0.45);
+}
 function startFire() {
   const at = landNear(110, 260, GREEN);
   if (!at) return false;
@@ -1212,6 +1224,7 @@ function startFire() {
     if (!i || GREEN(x, y)) light(x, y);
   }
   em = { k: 0, t: 0 };
+  siren();
   say('¡INCENDIO!');
   tell(1, '¡INCENDIO! SIGUE LA FLECHA AL AGUA, MOJA EL\nBALDE Y SUÉLTALA SOBRE EL FUEGO CON B5.', 8);
   return true;
@@ -1258,6 +1271,7 @@ function startFlood() {
   }
   for (let i = 70; i < 230; i += 45) folk.push({ x: path[i * 2], y: path[i * 2 + 1], z: groundAt(path[i * 2], path[i * 2 + 1]), i });
   em = { k: 1, t: 0, path, at: 0, saved: 0 };
+  siren();
   say('¡TORMENTA!');
   tell(1, 'LLUEVE FUERTE EN LA CORDILLERA: SE VIENE UN\nALUVIÓN. PASA BAJITO SOBRE LAS BALIZAS.', 16);
   return true;
@@ -1281,9 +1295,9 @@ function douse(x, y, z) {
     }
   }
   if (!out) return;
-  gain(150 * out, 'FUEGO APAGADO');
+  gain(300 * out, 'FUEGO APAGADO');
   if (!fires.length && em) {
-    gain(800, 'INCENDIO CONTROLADO');
+    gain(1500, 'INCENDIO CONTROLADO');
     heal(25);
     endEmergency();
   }
@@ -1311,6 +1325,7 @@ function simulate(dt) {
     talkC = c;
     if (talkT > talk[1].length * 0.03 + 2.6) {
       talk.splice(0, 2); // the line has been read: on to the next
+      if (news) news--;
       talkT = 0;
     }
   }
@@ -1338,6 +1353,8 @@ function simulate(dt) {
     if (!play) {
       turn = Math.sin(now * 0.23) * 0.45; // out of play, it wanders by itself
       lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + 16 - f.z) / 6, -1, 1);
+    } else if (!rawY && f.z < Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 14, f.y + sy * 14)) + 5) {
+      lift = 0.7; // hands off the stick, it will not fly into the ground: it lifts over what is ahead
     } else if (gHacked) {
       turn = -turn;
       lift = -lift;
@@ -1401,18 +1418,21 @@ function simulate(dt) {
         sq.y += sx * slide;
       }
     } else f.roll = 0;
-    f.s = duo ? clamp(f.s, -24, 24) : 0;
+    if (!rawX) f.s += ((f.id ? 8 : -8) - f.s) * dt * 1.2; // hands off, it drifts back to its own side
+    f.s = duo ? clamp(f.s, f.id ? lead.s + 10 : -15, f.id ? 15 : 5) : 0; // on screen, and never through its partner
     turns += f.turn / n;
     pushes += push / n;
   }
   if (gHacked) {
     gPurge = Math.max(0, gPurge - dt * 0.15);
+    gWhy = 'HACK';
     damage(dt * 2.5);
     if (((now * 3) | 0) !== (((now - dt) * 3) | 0)) tone(520, 260, 0.25, 'square', 0.07); // the alarm
     if (gPurge >= 1) {
       gHacked = 0;
       gImmune = 9;
       gFlash = 1;
+      gHit = 0;
       tone(200, 1600, 0.45, 'square', 0.07);
       for (const d of drones) if (d.k) d.hp = 0;
       gain(400, '¡HACKER EXPULSADO!');
@@ -1422,6 +1442,12 @@ function simulate(dt) {
   // ── the squad flies on
   const spd = SPEED * (1 + (BOOST - 1) * pushes);
   sq.yaw += turns * TURN_RATE * (duo ? 0.8 : 1) * dt;
+  // the map has edges: far out to sea, or on the snowfield beyond the cordillera, the squad is turned back
+  const out = sq.x < 40 ? 1 : sq.x > N - 70 ? -1 : 0;
+  if (play && out) {
+    sq.yaw += wrapAngle(out * 1.57 - sq.yaw) * dt * 2;
+    say('FUERA DE ZONA: DE VUELTA AL VALLE', 0.5);
+  }
   sq.x += sx * spd * dt;
   sq.y += sy * spd * dt;
 
@@ -1469,14 +1495,14 @@ function simulate(dt) {
 
     // guns: they track whatever enemy is nearest the line of the nose
     f.lock = null;
-    let best = 0.035;
+    let best = 0.06; // within about twenty degrees of the nose
     const aim = (t) => {
       const dx = t.x - f.x;
       const dy = t.y - f.y;
       const dz = t.z - f.z;
       const d = Math.hypot(dx, dy, dz);
-      const off = 1 - (dx * nx + dy * ny + dz * nz) / d;
-      if (d < 150 && off < best) {
+      const off = 1 - (dx * nx + dy * ny) / Math.hypot(dx, dy) / Math.hypot(nx, ny); // its bearing, level
+      if (d < 150 && off < best && Math.abs(dz) < d * 0.6) {
         best = off;
         f.lock = t;
       }
@@ -1581,7 +1607,7 @@ function simulate(dt) {
       dead = true;
       puff(s.x, s.y, s.z, 0, 0, 0, 0.14, 2, 1.3);
       if (!s.k) d.hp--;
-      else if (d.rollT <= 0) hurt(d, 14, '¡IMPACTO!'); // a roll turns it aside
+      else if (d.rollT <= 0) hurt(d, 9, '¡IMPACTO!'); // a roll turns it aside
     };
     if (s.z < gz) {
       dead = true;
@@ -1611,14 +1637,18 @@ function simulate(dt) {
   for (let i = drones.length - 1; i >= 0; i--) {
     const d = drones[i];
     if (d.hp <= 0) {
-      boom(d.x, d.y, d.z, 14);
-      if (play) gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO');
+      boom(d.x, d.y, d.z, 30);
+      if (play) {
+        gShake = 0.4;
+        pop = { x: d.x, y: d.y, z: d.z, t: now + 1, s: '+' + (d.k ? 300 : 100) * gMult };
+        gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO');
+      }
       drones.splice(i, 1);
       continue;
     }
     if (now > d.nt) {
-      d.ta = d.k ? 36 + rand() * 12 : 32 + rand() * 40;
-      d.ts = spread() * (d.k ? 14 : 32);
+      d.ta = d.k ? 36 + rand() * 12 : 40 + rand() * 35;
+      d.ts = spread() * (d.k ? 12 : 18);
       d.tu = spread() * 6 + 2;
       d.nt = now + 1.5 + rand() * 2.5;
     }
@@ -1633,7 +1663,7 @@ function simulate(dt) {
     if (!d.k) {
       d.cd -= dt;
       if (d.cd < 0 && d.a < 90) {
-        d.cd = 1.4 + rand() * 2;
+        d.cd = 2.2 + rand() * 2.4;
         shootAt(d, 0.6);
       }
     } else if (!gHacked && gImmune <= 0 && d.a < 70) {
@@ -1661,7 +1691,7 @@ function simulate(dt) {
     if (!sat) {
       gSatT -= dt;
       if (gSatT < 0) {
-        sat = { x: sq.x + cfx * 90, y: sq.y + cfy * 90, z: 285, hp: 14, r: 4.5, cd: 3 };
+        sat = { x: sq.x + cfx * 90, y: sq.y + cfy * 90, z: 285, hp: 40, r: 4.5, cd: 3 };
         tell(1, 'EL SATÉLITE HACKER ESTÁ EN LA\nESTRATÓSFERA. SUBE Y DESTRÚYELO.', 32);
       }
     } else if (sat.hp <= 0) {
@@ -1671,11 +1701,11 @@ function simulate(dt) {
       gSatT = 60;
       gHackT = 20;
     } else {
-      const e = 1 - Math.exp(-0.3 * dt);
+      const e = 1 - Math.exp(-3 * dt);
       sat.x += (sq.x + cfx * 60 - sat.x) * e;
       sat.y += (sq.y + cfy * 60 - sat.y) * e;
       sat.cd -= dt;
-      if (sat.cd < 0 && Math.hypot(sq.x - sat.x, sq.y - sat.y, sq.z - sat.z) < 130) {
+      if (sat.cd < 0 && Math.abs(sq.z - sat.z) < 40) {
         sat.cd = 1.3;
         shootAt(sat, 1);
       }
@@ -1741,6 +1771,7 @@ function simulate(dt) {
           if (GREEN(x, y)) light(x, y);
           if (fires.length > 11) {
             say('INCENDIO FUERA DE CONTROL', 2.5);
+            damage(15);
             gLow = 0;
             endEmergency();
           }
@@ -1753,6 +1784,7 @@ function simulate(dt) {
         }
         if (rand() < dt * 0.3) {
           gFlash = 0.6; // lightning, and its thunder a moment after
+          gHit = 0;
           burst(1.6, 0.3, 0.4, 0.1);
         }
         const o = (em.at | 0) * 2;
@@ -1765,16 +1797,17 @@ function simulate(dt) {
           if (crew.some((c) => Math.hypot(c.x - f.x, c.y - f.y) < 5 && c.z - f.z < 7)) {
             folk.splice(i, 1);
             em.saved++;
-            gain(500, '¡RESCATADO!');
+            gain(800, '¡RESCATADO!');
             heal(10);
             puff(f.x, f.y, f.z + 1, 0, 0, 6, 0.4, 2, 2);
           } else if (em.at >= f.i) {
             folk.splice(i, 1);
             say('EL ALUVIÓN SE LLEVÓ A ALGUIEN', 2);
+            damage(8);
           }
         }
         if (!folk.length) {
-          if (em.saved > 3) gain(600, 'TODOS A SALVO');
+          if (em.saved > 3) gain(1500, 'TODOS A SALVO');
           endEmergency();
         }
       }
@@ -2512,7 +2545,7 @@ function drawThings() {
     for (let o = 0; o < t.b.length; o += 6) slab(t.b[o], t.b[o + 1] + ty, t.b[o + 2], t.b[o + 3], t.b[o + 4], t.b[o + 5]);
   }
   for (const s of shots) {
-    if (!s.k) beam(s.x, s.y, s.z, s.x - s.vx * 0.025, s.y - s.vy * 0.025, s.z - s.vz * 0.025, 0.35, colShot, 255);
+    if (!s.k) beam(s.x, s.y, s.z, s.x - s.vx * 0.025, s.y - s.vy * 0.025, s.z - s.vz * 0.025, 0.6, WATER, 255);
     else ball(s.x, s.y, s.z, s.k === 2 ? 1 : s.r, s.k === 2 ? GLASS : GLOW, s.k === 1);
   }
 }
@@ -2716,7 +2749,23 @@ function drawHud() {
     text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 8, INK, 1, 1);
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     text(over ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 62, INK, 4, 1);
-    if (over) text('PUNTAJE ' + gScore + ' · RÉCORD ' + gBest, CXS, 104, GOLD, 2, 1);
+    if (over) {
+      text('PUNTAJE ' + gScore + ' · RÉCORD ' + gBest, CXS, 104, GOLD, 2, 1);
+      text(
+        gWhy === '¡IMPACTO!'
+          ? 'CONSEJO: MANTÉN B1 Y DERRIBA LOS DRONES ANTES DE QUE DISPAREN'
+          : gWhy === 'HACK'
+            ? 'CONSEJO: SI TE HACKEAN, AGITA LA PALANCA Y MACHACA B1'
+            : gWhy === '¡LÁSER!'
+              ? 'CONSEJO: CRUZA LAS VALLAS LÁSER CON UN TONEL (B2 O B3)'
+              : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
+        CXS,
+        124,
+        INK,
+        1,
+        1,
+      );
+    }
     else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 104, GOLD, 2, 1);
     face(0, 6, BH - 54, 2);
     face(1, BW - 62, BH - 54, 2, 1);
@@ -2798,6 +2847,9 @@ function drawHud() {
   // with two aboard, each flyer wears its number
   if (crew[1]) for (const f of crew) if (project(f.x, f.y, f.z + 2.4)) text(f.id + 1, prX, prY - 8, f.id ? GOLD : INK, 1, 1);
 
+  if (!gScore && blink) text('MANTÉN B1 PARA DISPARAR', CXS, BH - 84, GOLD, 2, 1);
+  if (pop && now < pop.t && project(pop.x, pop.y, pop.z)) text(pop.s, prX, prY - 22 + (pop.t - now) * 10, GOLD, 2, 1);
+
   // what is going on, across the top of the picture
   if (gHacked) {
     text('¡HACKEADO!', CXS, 48, colRed, 3, 1);
@@ -2811,7 +2863,7 @@ function drawHud() {
   // marks: what cannot be seen and where to go, each with what to do
   for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : 'DRON');
   for (const f of fences) mark(f.x, f.y, (f.z0 + f.z1) / 2, colRed, 'LÁSER: TONEL');
-  if (sat) mark(sat.x, sat.y, sat.z, colRed, 'SATÉLITE: SUBE', 1);
+  if (sat) mark(sat.x, sat.y, sat.z, colRed, sat.z - sq.z > 30 ? 'SATÉLITE: SUBE' : 'SATÉLITE: DISPARA', 1);
   if (folk[0]) mark(goal.x, goal.y, goal.z + 4, INK, 'RESCATE: PASA BAJITO', 1);
   else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, gWater ? 'FUEGO: SUELTA B5' : 'FUEGO', gWater);
   if (wet) mark(wet.x, wet.y, wet.z + 3, WATER, 'AGUA: MOJA EL BALDE', 1);
@@ -2880,7 +2932,7 @@ function drawFrame() {
   if (gHacked || gChan > 0.4) glitch(gHacked ? 1 : gChan * 0.5);
   if (gFlash > 0.02) {
     const a = (gFlash * 200) | 0;
-    for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], colTrail, a);
+    for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], gHit ? colRed : colTrail, a);
   }
   drawHud();
 }
@@ -2934,7 +2986,14 @@ function create() {
 function update(time, delta) {
   if (gMode !== PLAY && gT > 1 && (pressed.START1 || pressed.START2 || pressed.P1_1)) startGame(pressed.START2);
 
-  simulate(Math.min(delta / 1000, 0.05));
+  let dt = Math.min(delta / 1000, 0.1);
+  if (dt > 0.05) {
+    // a slow machine keeps real time: a long frame is flown in two steps
+    dt /= 2;
+    simulate(dt);
+    for (const key in pressed) pressed[key] = false;
+  }
+  simulate(dt);
   sound();
   const t0 = performance.now();
   drawFrame();
