@@ -1,4 +1,4 @@
-// DARWIN 3000
+// 2075
 //
 // A small software renderer shown through Phaser 3. Everything is drawn into one low-resolution
 // pixel buffer and scaled up with hard pixels:
@@ -868,7 +868,7 @@ let gPos = 0; // which of the three is being chosen
 // The five best flights, [initials, score], best first: kept by the cabinet between visits
 // (or by the browser, away from it).
 let BEST = [];
-const KEY = 'darwin3000.top';
+const KEY = '2075.top';
 function loadTop() {
   const take = (v) => {
     if (Array.isArray(v)) BEST = v.filter((e) => Array.isArray(e) && e[1] > 0).slice(0, 5);
@@ -1139,7 +1139,7 @@ function startGame(two) {
   talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
   tell(0, 'MANTÉN B1 PARA DISPARAR Y APUNTA\nCON LA NARIZ A LOS DRONES.');
-  tell(0, 'AÑO 3000. LAS IA ENEMIGAS\nNOS ATACAN CON SUS DRONES.');
+  tell(0, 'AÑO 2075. ENTRE INCENDIOS Y ALUVIONES,\nLAS IA ENEMIGAS NOS ATACAN CON DRONES.');
   tell(1, 'LA BIOINGENIERÍA NOS HIZO SÚPER LISTOS:\nPILOTEAMOS MEJOR QUE CUALQUIER IA.');
   tell(0, 'VUELA BAJO PARA MULTIPLICAR LOS PUNTOS:\nPALANCA ATRÁS SUBE, ADELANTE BAJA.');
   if (two) join();
@@ -2558,7 +2558,7 @@ function box(x, y, w, h, colour) {
 const FONT =
   'd09GMgABAAAAAAesAAsAAAAAMwgAAAdgAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAgVwRCAreGMloATYCJAOBXAtwAAQgBQYHIBunJ1GUD8o8iJ8HtjH1oQVFgJYhgTKWLXFIHB7e3fW9AiEMaGDxLwhKl+69TKjR+BU6A8ksA5+RFWSFuUuFUAFRB6wuSEWrmdTO+z1j7k_sboJYVG2mnbeGy5WARte4VBHTGx4SrP8B6h93HeGxPP_7pT_Lf9QmJEqVpnEq_czsJrm0_ktTFAdy7zt338++3dCLRBjGM74LicN1oRAKozEiNpKnLEvVXRLfjV2lvIW6zyBMTBgmEA6BXcZqoO98B2IWZfgAwqNxHqjxRSf2TR7kKdH80NLUgLCkfIAAEAeM2UEaGhCAssNAQ5wNw0P4F0kjDEinhFrqmMg0zuARnrHJLoccc85VCJBGATZ1tDAJ6WMI7V+EMihXEmj+sqVc45+RII0MAHJ4v0tQQgXFlFNKGYG0+PsQTQyxxJFAIkkko2OQQhCTEYxkFAIRQiIA1QCsBMZB8h2gVwIJQBLvswE0M_QClxP4p0mwiZYEPgjCzYQ1m9AUQYU6pU14wDA+r2zU9UmNhY1fTzcsWvl3TffmgovD5cXG9LUb9EnFM_RJaqWxcrVvsL6d0tNjiisnNcSrmMzEjtYQPac4JiREz86PodSQaTGZrUYMPZuz6I+iJTEQfCVUoSuFv_tgA9EH23NyRgsEU7ohTbvwOg637CfVJExsiXM3gUFXk+iJhLfySUVjkjbKjgCxU_F9koImCIuKDGjamGE6okMczUhrcAtX8c87FakJde+NqyZa0MqgNDqWGz23gJDmZJM2pB5Y_DeljUYpv4Re1NHcSTeugWhBd25ykLBzyKgGuHR2A4T4Cq7moZ6zgGO6BvA9yWt+TJL7AqoOyA+7oF64dPy5m7UY152ikecxe3jycWacLsUQ3QMlMQw5ZLghVhSGahpZrZYqTKGeSY34ldLDPWcTvdrzOErnMSBcsPVIgyE01wVOIvZGtB+Pz6kQ6HYU0sLZ2rMUZ4mJ7hath6UXBLBja2F5oaFALaTV1fgkGgMOXMgv9iTD+II6u9qLUwN7cWKaNOy6yJ+4NrWMXzjLUxSIn3udzEhe_WCUV3t+gsEN8zhu05XrmfE2Szkwn+P86Ss_4UrPzw05uk2UzcH7ulynS5KxOyU9XY0KVeXOPaT2Bv70Hzsv2nLYWSzYI5F2WrvjsJKhJuTPQ9iaE8MBMYju5kBIrxsqLFIZH_xpXXLOkDAb6nqoBLIYMaSuuqNTTiLxc5ljny4N72seKtLVrprGF02Zvuxvk8EUE7Z4BVL37ptuL6dhJA8+f6vMyW4yg7ZjB80mkJyu0JV9+d0ZIl_JZsTEgCKndsWJDTvwVqsZl_W+ysSCiVMSC_4f26QIi+JkW6yx9cyDg0GzyW0np0j56GnTWE3jmKTrVDPxVBaLrq4UD9s5svnUQrrNk0hJdQdW9qWP+OgHjt8nFkO1YFm0WP_VK8BZPN3E4O0HOLSf7i0VJTMMF4KKwIaj56IGSBR8eQ_kLZJN4kC6OAeL_+YkaUP6lCoSonanFDD66wHWl9C9iyr_nlh6ZHhWdnhM0jWEJvLeDeg0oHTSEHmI1EPKoFN3j6QI0KDgOngdAaUvZ2QyGD5uoIVRX1wVXWJTbUk0gHPziCplDVILhpYAcLnFrSjEp0g3FE+LgFXkHTmNHZdJLiJFKDQxSF0cy4g0XkOi3CSn98qeefngdPvJCwcmak+x4IAzBoyybjp20SqkkgiLiBrxj_cw9_fQe2UP5G+e2YW_6rR4t_A94hsI1ky9+Q1DfHtzU0DDwE9objJjjAgZML1UP93I0rXH6JYc0FskLDN6oTNWS8ZY5xDSgDHFjEUUtzJVDZL5VBfZTG3+kU4MdE5YhwYTLiIRfHrHrfFL68TmMisRN3q1JzNUs46IBUHf71Hcfpiq0wPraiXekIosIwo66byuyeAif77tZo3D8zctpmzldcGtj8YzIPWFlGHMPwo0uWnrJBUhsbMDUe3HvEOV8xQBKMfWsjKIDFamHjobluS_WSJehMvmARcQj6sVHNIb5DawYP1BCWEpwPhmo5TtySrnGPe2iK7ck4S1+3i6+efDAUrui+rUwHZB4I_CyuHoIo4K394jQrK7d+zssDjIuDwNmkSpJK4JsSWW+cVvRiGYcoiufAsDvYI9VZBdF_3Tc5Xr3GxNs5zd5bUv2XPCUW5zu8Xh9zmFKYLFY7r54VDTCOFJhsGxI1KtetcbB7PM4K0Y7sPLFWDmaXSX_6o5eVQO_E1yavzGWq1p+CY6T8Bws0K3Lmv2dPguQOFVTolJQVP8vsZkbFdCdjmn7bpJmk6ZzklRkqBaPdTYMDGRxPISt0rtlNL5xTu_O8JWDee7cpoUtW8fMtCBSKrEBE6DJADIArFcS0sAATgXpT42JapHaSY_gI9nV14D+JSx++5_uSCDzxwURBIAQICWpgaIAwjL_I1K_b5YLSYA2F3W6v5MdW9OUWg3MqtM1PRayXVrCm5JOUrr38FDszveLBCvif439cP_GQRQzXesvMaufk+r2h6BdjUhKwMjYQY=';
 const LABELS = [];
-const SIZES = [0, 24, 42, 63, 104]; // a letter is 0.4 of its size wide: 4.8 of the picture's pixels in the smallest
+const SIZES = [0, 24, 42, 63, 104, 176]; // a letter is 0.4 of its size wide: 4.8 of the picture's pixels in the smallest
 let labelN = 0;
 let scene;
 // align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
@@ -2737,9 +2737,13 @@ function drawHud() {
   const blink = (now * 2) & 1;
   if (gMode !== PLAY) {
     const over = gMode === OVER;
-    text('AÑO 3000 · DRONES DE IA ENEMIGA ATACAN CHILE', CXS, 8, INK, 1, 1);
+    text('INCENDIOS, ALUVIONES Y DRONES DE IA ENEMIGA ASOLAN CHILE', CXS, 8, INK, 1, 1);
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
-    text(over ? 'FIN DEL VUELO' : 'DARWIN 3000', CXS, 62, INK, 4, 1);
+    if (over) text('FIN DEL VUELO', CXS, 62, INK, 4, 1);
+    else {
+      text('2075', CXS, 30, INK, 5, 1);
+      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 88, INK, 2, 1);
+    }
     const naming = over && gName && gPos < 3;
     if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
     else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 104, GOLD, 2, 1);
