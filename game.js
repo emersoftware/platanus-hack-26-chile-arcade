@@ -641,6 +641,21 @@ function inEll(x, y, z, rx, ry, rz) {
 // nose, z up. 0 is empty air.
 function partAt(x, y, z, who) {
   const d = Math.abs(x);
+  if (who > 2) {
+    // the monito's portrait: a round head with big black eyes in a dark ring, round pink ears,
+    // a short muzzle and a pink nose
+    if (inEll(d - 4.6, y - 18.6, z - 7.8, 2.6, 2.3, 2.6)) return GLASS;
+    if (inEll(d - 4.9, y - 19.6, z - 7.5, 3.5, 2.7, 3.4)) return ENGINE;
+    if (inEll(x, y - 10, z - 5.2, 1.5, 1.4, 1.3) || inEll(d - 6.8, y - 27, z - 10.6, 3, 1.3, 2.4)) return HEAD;
+    return inEll(x, y - 24, z - 6.3, 7.5, 8.5, 6.2) || inEll(x, y - 14.5, z - 4.8, 3.4, 5, 2.9) ? BODY : 0;
+  }
+  if (who > 1) {
+    // Darwin's portrait: a flat, wide head drawn out into a pointed snout, golden eyes
+    // standing up at its sides
+    if (inEll(d - 7.3, y - 22.5, z - 9.5, 1.5, 1.7, 1.5)) return ENGINE;
+    if (inEll(d - 6, y - 22.5, z - 9, 2.7, 3, 2.7)) return GLASS;
+    return inEll(x, y - 27, z - 5.6, 8.5, 9.5, 5.2) || inEll(x, y - 17, z - 5.2, 4.8, 8, 3.2) || inEll(x, y - 9.5, z - 5.4, 1.8, 3.4, 1.5) ? BODY : 0;
+  }
   if (who) {
     if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
     if (inEll(d - 2.9, y - 13.5, z - 8.3, 1.5, 0.7, 1.6)) return HEAD; // ears
@@ -682,7 +697,7 @@ function buildModel(who) {
       for (let i = 0; i < GW; i++) {
         const v = partAt((i + 0.5) / MK - 0.5 - MCX, (j + 0.5) / MK - 0.5, (k + 0.5) / MK - 0.5, who);
         grid[(k * GL + j) * GW + i] = v;
-        if (v) MASK[((j / MK) | 0) * MW + ((i / MK) | 0)] = 1;
+        if (v && who < 2) MASK[((j / MK) | 0) * MW + ((i / MK) | 0)] = 1;
       }
     }
   }
@@ -2238,9 +2253,15 @@ function drawFlyer(f) {
   const s = prM * MODEL_SCALE;
   const reach = s * 34;
   if (prX < -reach || prX > BW + reach || prY < -reach || prY > BH + reach) return;
-  fx0 = prX;
-  fy0 = prY;
-  fv0 = prV;
+  paint(f, prX, prY, prV, s);
+  drawFlames(f, s);
+}
+
+// A model with its pivot at a place on screen and a depth, `s` pixels to its design unit.
+function paint(f, x, y, v, s) {
+  fx0 = x;
+  fy0 = y;
+  fv0 = v;
   fHalf = Math.max(0.5, (s * 0.71) / MK);
 
   // each model axis as a step on screen (x, y) and in depth
@@ -2288,7 +2309,6 @@ function drawFlyer(f) {
     const c = JPAL[(skin + m) * NLV + (l | 0)];
     plotVoxel(ma[i], mb[i], mc[i] + mw[i] * flex, hot[i] ? mix(c, HEAT[1], (hot[i] * fire) | 0) : c);
   }
-  drawFlames(f, s);
 }
 
 // Something soft and round at a place in the world: `r` across, `dens` thick at its middle.
@@ -2556,23 +2576,23 @@ function text(str, x, y, colour, size, align) {
   t.setOrigin((align || 0) / 2, 0.2).setPosition(x * PX, y * PX).setVisible(true);
 }
 
-// The crew's portraits, in pixel art, both in profile and with no outline: Darwin's frog — a
-// leaf-green back with a pale edge, a dark stripe through a golden eye, a snout drawn out to a
-// point — and the monito del monte — big black eyes in a dark ring, round pink ears, a pink
-// nose. Each is 28 dots by 24, row after row: a letter is a colour, a dot is nothing, and a
-// number after either repeats it.
-const FACES = [
-  '.89l6.21lg6l5.15lgG6g5l4.11c8Gg10.9B8c8g8.4B16c8g.3b8B5y3B8c.3b12ywk2yB2o4B.4b12yk3yb2o4.5b3Bb4Bb3yk3ybo3.7bBb2Bb6Bby3o3.9b9Bb3o5.10o7b3o6.12o2Bo10.15o5Bo4.18o7.21o7.19N12.16n14.14n14.14n14.13',
-  '.6F.25F5.7F4.11F2p3F2.5F2p2F2.9F2p5F2.4Fp4F.9F2p3PpFf6p4F.9F2p2Pt9f3F.11Fp2t12f2.11F2t10d4f2.11Fft8dk4df2.10F2f2t5dw2k3d2f.9F3f7dwk5df2.8F3f7dk6d2f.8F3f7dk4d5p3.5F3f7d2k4d3p3P.5F3f8d5m4P2p.6F2f3m16.7F2f2m11F4m.9f2m15.12m14.15m12.10N17.11n19.9n19.9n19.8',
-].map((s) => s.replace(/(\D)(\d+)/g, (m, c, n) => c.repeat(n)));
-const FACE_INK = 'BFGNPbcdfgklmnoptwy';
-const FACE_COL = '542e207a4e32429236a8c8e0c86882a05c32ece4b4261a18b07a4c76c4480e1416b2e470f8f0e0e0f0ffce8648f496aad8b07effffffe8be54'.match(/.{6}/g).map((h) => pack(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4), 16)));
-// `flip` turns it to face left
-function face(who, x, y, size, flip) {
-  for (let i = 0; i < 672; i++) {
-    const c = FACE_INK.indexOf(FACES[who][i]);
-    if (c >= 0) box(x + (flip ? 27 - (i % 28) : i % 28) * size, y + ((i / 28) | 0) * size, size, size, FACE_COL[c]);
-  }
+// The crew's portraits: their heads as voxel models, lit like the flyers, painted in front
+// of everything — in profile, turned a little towards the viewer and never quite still.
+// `flip` faces it left.
+const HEADS = [0, 1].map((id) => ({ id, ax: new Float32Array(9), thr: 0, flex: 0 }));
+function face(who, x, y, s, flip) {
+  const f = HEADS[who];
+  const t = 0.85 + Math.sin(now * 1.4 + who) * 0.15;
+  const c = Math.cos(t) * (flip ? -1 : 1);
+  const n = Math.sin(t);
+  const a = f.ax;
+  a[3] = rgtX * c - fwdX * n; // its nose points across the screen, and out of it a little
+  a[4] = rgtY * c - fwdY * n;
+  a[0] = -a[4];
+  a[1] = a[3];
+  a[8] = 1;
+  f.m = MODELS[who + 2];
+  paint(f, x, y, -500, who ? s * 1.2 : s);
 }
 
 // A gauge: a row of lamps, lit up to `share` of the way along, in a dark frame.
@@ -2734,8 +2754,8 @@ function drawHud() {
       // the table of records
       BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), CXS, 140 + i * 11, i ? DIM : GOLD, 1, 1));
     }
-    face(0, 6, BH - 54, 2);
-    face(1, BW - 62, BH - 54, 2, 1);
+    face(0, 34, BH - 28, 2.5);
+    face(1, BW - 34, BH - 28, 2.5, 1);
     text('DARWIN', 66, BH - 52, GOLD);
     text('MONITO', BW - 66, BH - 52, GOLD, 1, 2);
     legend(BH - 38, INK);
@@ -2795,7 +2815,7 @@ function drawHud() {
   // bottom middle: the radio — whoever is talking and the line as far as it has been said —
   // or, with the radio quiet, what the buttons do
   if (talk[1]) {
-    face(talk[0], 66, BH - 54, 2);
+    face(talk[0], 92, BH - 30, 2.5);
     text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 52, GOLD);
     text(talk[1].slice(0, talkT * 40), 128, BH - 38, INK);
   } else if (gT < 60) {
@@ -2934,8 +2954,7 @@ function create() {
   scene = this;
   AC = this.sound.context || null;
   buildPalettes();
-  buildModel(0);
-  buildModel(1);
+  for (let i = 0; i < 4; i++) buildModel(i);
   lead.m = MODELS[0];
   mate.m = MODELS[1];
   buildWorld(SEED);
