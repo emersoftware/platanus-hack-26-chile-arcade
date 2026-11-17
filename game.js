@@ -2925,7 +2925,7 @@ function drawHud() {
     return s.length > 26 ? s.slice(0, i) + '\n' + s.slice(i + 1) : s;
   };
   if (D) {
-    box(260, 0, 140, BH, pack(SKY_TOP[0], SKY_TOP[1], SKY_TOP[2])); // in the sky's own blue
+    box(260, 0, 140, BH, 0xff000000);
     box(0, 149, BW, 2, OFF);
   }
   (D ? crew : [lead]).forEach((f, i) => {
@@ -2942,14 +2942,17 @@ function drawHud() {
     }
 
     // shield and water (the crew's), and their own boost
-    const gy = oy + (D ? 34 : 0);
-    text('ESCUDO', 288, gy + 5, DIM);
-    gauge(328, gy + 7, 66, gShield / 100, gShield < 30 ? colRed : INK);
-    text('IMPULSO', 288, gy + 16, DIM);
-    gauge(328, gy + 18, 66, f.stam / 100, ink);
-    text('AGUA', 288, gy + 27, DIM);
-    box(327, gy + 28, 67, 7, EDGE);
-    for (let n = 0; n < 3; n++) box(328 + n * 22, gy + 29, 21, 5, n < gWater ? WATER : OFF);
+    const gy = oy + (D ? 32 : 0);
+    const lx = D ? 266 : 288; // in the column they line up with the rest, and run its width
+    const gx = lx + (D ? 50 : 40);
+    const gw = D ? 78 : 66;
+    text('ESCUDO', lx, gy + 5, DIM);
+    gauge(gx, gy + 7, gw, gShield / 100, gShield < 30 ? colRed : INK);
+    text('IMPULSO', lx, gy + 16, DIM);
+    gauge(gx, gy + 18, gw, f.stam / 100, ink);
+    text('AGUA', lx, gy + 27, DIM);
+    box(gx - 1, gy + 28, gw + 1, 7, EDGE);
+    for (let n = 0; n < 3; n++) box(gx + (n * gw) / 3, gy + 29, gw / 3 - 1, 5, n < gWater ? WATER : OFF);
 
     // height: the ground rising from the foot of the scale, the cloud base and the
     // stratosphere ruled across it, and the flyer
@@ -2960,14 +2963,14 @@ function drawHud() {
     box(D + 4, rung(CA), 8, 1, INK);
     box(D + 4, rung(STRATO), 8, 1, INK);
     box(D + 3, rung(f.z) - 1, 10, 2, ink);
-    text('ALTURA', D + 18, foot - 38, DIM);
-    text((f.agl | 0) * 10, D + 18, foot - 28, INK, 2); // in tens: every change of a label is a redraw of it
-    radar(D ? 372 : BW - 30, D ? oy + 124 : BH - 30, D ? 19 : 24, f);
+    text('ALTURA', D + 18, foot - (D ? 34 : 38), DIM);
+    text((f.agl | 0) * 10, D + 18, foot - (D ? 24 : 28), INK, 2); // in tens: every change of a label is a redraw of it
+    radar(D ? 374 : BW - 30, D ? oy + 127 : BH - 30, D ? 17 : 24, f);
     if (D) {
       // which view is whose; the job in hand; and the news, or how the job is done
       text(i + 1, 4, oy + 3, ink);
-      text(duty[0], 266, oy + 72, GOLD);
-      text(fit(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 84, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
+      text(duty[0], 266, oy + 73, GOLD);
+      text(fit(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 85, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
     }
   });
 
@@ -2990,12 +2993,17 @@ function drawHud() {
   // bottom middle: the radio — whoever is talking and the line as far as it has been said —
   // or, with the radio quiet, what the buttons do
   if (talk[1]) {
-    // dark words on a pale blue card of their own, as wide as the longer line, so nothing in the
-    // scene shows through them (the marks and their names keep above it); the head stands free
-    box(124, BH - 57, Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 10, 46, colHaze);
-    face(talk[0], 92, BH - 30, 2.5);
-    text((talk[0] ? 'MONITO' : 'DARWIN') + ' · BOTÓN 6: SALTAR', 129, BH - 53, colRed, 1, 0, 1);
-    text(talk[1].slice(0, ((talkT * 13) | 0) * 3), 129, BH - 40, EDGE, 1, 0, 1);
+    // dark words on a white card of their own — a thin black edge, its corners a little
+    // rounded — as wide as the longer line, so nothing in the scene shows through them (the
+    // marks and their names keep above it); the head stands free
+    const w = Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 22;
+    box(113, BH - 61, w - 2, 56, 0xff000000);
+    box(112, BH - 60, w, 54, 0xff000000);
+    box(114, BH - 60, w - 4, 54, INK);
+    box(113, BH - 59, w - 2, 52, INK);
+    face(talk[0], 82, BH - 30, 2.5);
+    text((talk[0] ? 'MONITO' : 'DARWIN') + ' · BOTÓN 6: SALTAR', 123, BH - 54, colRed, 1, 0, 1);
+    text(talk[1].slice(0, ((talkT * 13) | 0) * 3), 123, BH - 40, EDGE, 1, 0, 1);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
     if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
