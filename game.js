@@ -652,9 +652,9 @@ function partAt(x, y, z, who) {
   if (who > 1) {
     // Darwin's portrait: a flat, wide head drawn out into a pointed snout, golden eyes
     // standing up at its sides
-    if (inEll(d - 7.3, y - 22.5, z - 9.5, 1.5, 1.7, 1.5)) return ENGINE;
-    if (inEll(d - 6, y - 22.5, z - 9, 2.7, 3, 2.7)) return GLASS;
-    return inEll(x, y - 27, z - 5.6, 8.5, 9.5, 5.2) || inEll(x, y - 17, z - 5.2, 4.8, 8, 3.2) || inEll(x, y - 9.5, z - 5.4, 1.8, 3.4, 1.5) ? BODY : 0;
+    if (inEll(d - 8.1, y - 22.5, z - 9.5, 1.5, 1.7, 1.5)) return ENGINE;
+    if (inEll(d - 6.8, y - 22.5, z - 9, 2.7, 3, 2.7)) return GLASS;
+    return inEll(x, y - 27, z - 5.6, 9.7, 9.5, 5.2) || inEll(x, y - 17, z - 5.5, 5.4, 8, 3.2) || inEll(x, y - 9.5, z - 6.7, 1.8, 3.6, 1.5) ? BODY : 0;
   }
   if (who) {
     if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
