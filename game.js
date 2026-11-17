@@ -822,6 +822,7 @@ function makeFlyer(id) {
     dash: 0, // seconds of dash still to run
     rest: 0,
     kick: 0, // the bounce off the ground
+    sc: 0, // what this one has scored
     graze: 0, // counts down after a touch of the ground: forgiven at first, then not
     inv: 0, // seconds of safety after a hit
     fireCd: 0,
@@ -1048,9 +1049,11 @@ function say(text, secs) {
   gMsgT = secs || 1.8;
 }
 
-function gain(points, text) {
+// `who` earned them (the whole crew, if no one in particular)
+function gain(points, text, who) {
   points *= gMult;
   gScore += points;
+  for (const f of who ? [who] : crew) f.sc += points;
   say(text + ' +' + points);
   tone(660, 660, 0.07, 'triangle', 0.1); // two notes, rising
   tone(990, 990, 0.14, 'triangle', 0.1, 0.07);
@@ -1122,7 +1125,7 @@ function resetFlight() {
 // Player two comes in: the crew spread out to either side of the squad.
 function join() {
   crew[1] = mate;
-  Object.assign(mate, { z: lead.z, s: 8, stam: 100, inv: 2, trailLen: 0, kick: 0, rollT: 0, x: lead.x, y: lead.y });
+  Object.assign(mate, { z: lead.z, s: 8, sc: 0, stam: 100, inv: 2, trailLen: 0, kick: 0, rollT: 0, x: lead.x, y: lead.y });
   lead.s = -8;
   tell(1, '¡MONITO EN EL AIRE!\nVOLEMOS JUNTOS, DARWIN.');
 }
@@ -1139,7 +1142,7 @@ function startGame(two) {
   drones.length = shots.length = fires.length = folk.length = 0;
   sat = em = null;
   crew.length = 1;
-  Object.assign(lead, { s: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
+  Object.assign(lead, { s: 0, sc: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
   talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
   tell(0, 'MANTÉN B1 PARA DISPARAR Y APUNTA\nCON LA NARIZ A LOS DRONES.');
@@ -1305,7 +1308,7 @@ function endEmergency() {
 }
 
 // Water lands: every fire close by goes out.
-function douse(x, y, z) {
+function douse(x, y, z, by) {
   for (let i = 0; i < 10; i++) puff(x, y, z + 0.5, spread() * 8, spread() * 8, 4 + rand() * 8, 0.6, 3, 1.2);
   let out = 0;
   for (let i = fires.length - 1; i >= 0; i--) {
@@ -1315,7 +1318,7 @@ function douse(x, y, z) {
     }
   }
   if (!out) return;
-  gain(300 * out, 'FUEGO APAGADO');
+  gain(300 * out, 'FUEGO APAGADO', by);
   if (!fires.length && em) {
     gain(1500, 'INCENDIO CONTROLADO');
     heal(25);
@@ -1543,7 +1546,7 @@ function simulate(dt) {
     if (play && held[f.key + '1'] && !gHacked && f.fireCd <= 0) {
       f.fireCd = 0.12;
       tone(1100 - f.id * 260, 320, 0.07, 'square', 0.03); // each flyer's guns have their own note
-      shots.push({ k: 0, x: f.x + nx * 3, y: f.y + ny * 3, z: f.z + nz * 3, vx: nx * SHOT, vy: ny * SHOT, vz: nz * SHOT, t: 0.7, to: f.lock });
+      shots.push({ k: 0, x: f.x + nx * 3, y: f.y + ny * 3, z: f.z + nz * 3, vx: nx * SHOT, vy: ny * SHOT, vz: nz * SHOT, t: 0.7, to: f.lock, by: f });
     }
 
     if (play) {
@@ -1563,7 +1566,7 @@ function simulate(dt) {
       if (pressed[f.key + '5'] && gWater > 0) {
         gWater--;
         burst(0.3, 0.08, 0, 1.5);
-        shots.push({ k: 2, x: f.x, y: f.y, z: f.z - ROPE, vx: sx * spd, vy: sy * spd, vz: -4, t: 8 });
+        shots.push({ k: 2, x: f.x, y: f.y, z: f.z - ROPE, vx: sx * spd, vy: sy * spd, vz: -4, t: 8, by: f });
       }
     }
 
@@ -1648,12 +1651,15 @@ function simulate(dt) {
       if (dead || Math.hypot(d.x - s.x, d.y - s.y, d.z - s.z) > (d.r || 1.4) + 1) return;
       dead = true;
       puff(s.x, s.y, s.z, 0, 0, 0, 0.14, 2, 1.3);
-      if (!s.k) d.hp--;
+      if (!s.k) {
+        d.hp--;
+        d.by = s.by;
+      }
       else if (d.rollT <= 0) hurt(d, 9, '¡IMPACTO!'); // a roll turns it aside
     };
     if (s.z < gz) {
       dead = true;
-      if (s.k === 2) douse(s.x, s.y, gz);
+      if (s.k === 2) douse(s.x, s.y, gz, s.by);
       else puff(s.x, s.y, gz + 0.3, 0, 0, 2, 0.3, 4, 0.6);
     } else if (!s.k) {
       drones.forEach(hit);
@@ -1683,7 +1689,7 @@ function simulate(dt) {
       if (play) {
         gShake = 0.4;
         pop = { x: d.x, y: d.y, z: d.z, t: now + 1, s: '+' + (d.k ? 300 : 100) * gMult };
-        gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO');
+        gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO', d.by);
       }
       drones.splice(i, 1);
       continue;
@@ -1713,7 +1719,7 @@ function simulate(dt) {
       d.u += du * k;
       if (l < 2.6) {
         boom(d.x, d.y, d.z, 30);
-        if (kz.rollT > 0) gain(150, '¡ESQUIVADO!');
+        if (kz.rollT > 0) gain(150, '¡ESQUIVADO!', kz);
         else hurt(kz, 18, '¡KAMIKAZE!');
         drones.splice(i, 1);
         continue;
@@ -1765,7 +1771,7 @@ function simulate(dt) {
       }
     } else if (sat.hp <= 0) {
       boom(sat.x, sat.y, sat.z, 40);
-      gain(1500, 'SATÉLITE DESTRUIDO');
+      gain(1500, 'SATÉLITE DESTRUIDO', sat.by);
       sat = null;
       gSatT = 60;
       gHackT = 20;
@@ -1851,10 +1857,11 @@ function simulate(dt) {
         if (rand() < dt * 14) puff(em.x + spread() * 3, em.y + spread() * 3, em.z + 1, spread() * 3, spread() * 3, 2 + rand() * 3, 1.2, 4, 1.6);
         for (let i = folk.length - 1; i >= 0; i--) {
           const f = folk[i];
-          if (crew.some((c) => Math.hypot(c.x - f.x, c.y - f.y) < 5 && c.z - f.z < 7)) {
+          const by = crew.find((c) => Math.hypot(c.x - f.x, c.y - f.y) < 5 && c.z - f.z < 7);
+          if (by) {
             folk.splice(i, 1);
             em.saved++;
-            gain(800, '¡RESCATADO!');
+            gain(800, '¡RESCATADO!', by);
             heal(10);
             puff(f.x, f.y, f.z + 1, 0, 0, 6, 0.4, 2, 2);
           } else if (em.at >= f.i) {
@@ -2802,8 +2809,8 @@ function mark(x, y, z, colour, label, always) {
   else tag(label, px, py - Math.sign(ey) * 13 - 5, colour);
 }
 
-// The radar: what is around the crew, nose up.
-function radar(cx, cy, R) {
+// The radar: what is around `o` — one of the crew — nose up.
+function radar(cx, cy, R, o) {
   for (let a = 0; a < TAU; a += 0.02) {
     // a ring, dark outside and pale inside, with nothing behind it
     for (let i = 0; i < 3; i++) box(cx + Math.sin(a) * (R + 1 - i), cy + Math.cos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
@@ -2811,8 +2818,8 @@ function radar(cx, cy, R) {
   const sx = Math.sin(sq.yaw);
   const sy = -Math.cos(sq.yaw);
   const blip = (t, colour, size) => {
-    const dx = t.x - sq.x;
-    const dy = t.y - sq.y;
+    const dx = t.x - o.x;
+    const dy = t.y - o.y;
     let px = ((dy * sx - dx * sy) * R) / 170;
     let py = (-(dx * sx + dy * sy) * R) / 170;
     const d = Math.hypot(px, py) / (R - 2);
@@ -2829,11 +2836,9 @@ function radar(cx, cy, R) {
   for (const d of drones) blip(d, colRed, d.k ? 3 : 2);
   if (sat) blip(sat, colRed, 3);
   if (wet) blip(wet, WATER, 3);
-  // the crew: arrowheads, nose up; and north, round the rim
-  crew.forEach((f, i) => {
-    blip(f, i ? GOLD : INK, 3);
-    for (let n = 1; n < 4; n++) box(cx + ((f.s * R) / 170) - n + 0.5, cy + n - 4, n * 2 - 1, 1, i ? GOLD : INK);
-  });
+  // the crew, and at the middle an arrowhead, nose up, for whose radar it is; north, round the rim
+  for (const f of crew) blip(f, f.id ? GOLD : INK, 3);
+  for (let n = 1; n < 4; n++) box(cx - n + 0.5, cy + n - 4, n * 2 - 1, 1, o.id ? GOLD : INK);
   text('N', cx - sx * (R + 6), cy + sy * (R + 6) - 5, INK, 1, 1);
 }
 
@@ -2845,12 +2850,12 @@ function drawHud() {
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     if (over) text('FIN DEL VUELO', CXS, 62, INK, 4, 1);
     else {
-      logo(34);
-      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 104, INK, 2, 1);
+      logo(44);
+      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 106, INK, 2, 1);
     }
     const naming = over && gName && gPos < 3;
     if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
-    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 122, GOLD, 2, 1);
+    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 134, GOLD, 2, 1);
     if (naming) {
       text('¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
       text([...gName].map((c, i) => (i === gPos && blink ? ' ' : c)).join(' '), CXS, 140, GOLD, 3, 1);
@@ -2885,34 +2890,6 @@ function drawHud() {
   }
 
   const goal = folk[0] || fires[0];
-  // With two aboard the picture is split — a view each, one above the other — and every
-  // instrument stands in a column down the right: D is that column's left edge less the
-  // score's own (0 alone), and long lines are broken in two to fit it.
-  const D = crew[1] ? 260 : 0;
-  const fit = (s) => {
-    const i = s.lastIndexOf(' ', s.length / 2 + 4);
-    return D && s.length > 26 ? s.slice(0, i) + '\n' + s.slice(i + 1) : s;
-  };
-  const mx = D ? 331 : CXS; // where the news goes
-  const my = D ? 158 : 48;
-  if (D) {
-    box(260, 0, 140, BH, EDGE);
-    box(0, 149, 260, 2, EDGE);
-    text(1, 4, 3, INK);
-    text(2, 4, 154, GOLD);
-  }
-
-  // top left: score, the multiplier, and how long the crew has kept low
-  text('PUNTAJE', D + 6, 5, DIM);
-  if (gAgl < 8) text('VUELO BAJO', D + 116, 5, GOLD, 1, 2);
-  text(String(gScore).padStart(6, '0'), D + 6, 16, INK, 2);
-  text('×' + gMult, D + 116, 16, gMult > 1 ? GOLD : DIM, 2, 2);
-  if (gLow > 0.1) {
-    box(D + 5, 32, (gLow / 10) * 110 + 2, 4, EDGE);
-    box(D + 6, 33, (gLow / 10) * 110, 2, GOLD);
-  }
-
-  // top middle: the job in hand, and how it is done
   const duty = folk[0]
     ? [(em.at ? 'ALUVIÓN' : 'TORMENTA') + ` · ${folk.length} POR RESCATAR`, 'PASA BAJITO SOBRE CADA BALIZA']
     : goal
@@ -2920,50 +2897,61 @@ function drawHud() {
       : sat
         ? ['SATÉLITE HACKER', 'SUBE A LA ESTRATÓSFERA Y DISPARA']
         : ['PATRULLA', 'DERRIBA DRONES · VUELA BAJO'];
-  const jx = D ? 266 : CXS;
-  text(duty[0], jx, D ? 82 : 5, goal || sat ? (blink ? GOLD : INK) : GOLD, 1, !D);
-  text(fit(duty[1]), jx, D ? 94 : 17, INK, 1, !D);
-  // with a fire burning, the weather it burns in
-  if (fires[0]) text(fit(`CALOR ${(30 + dry() * 12) | 0} · HUMEDAD ${(30 - dry() * 20) | 0} · VIENTO ${(20 + dry() * 50) | 0}`), jx, D ? 122 : 29, colFire, 1, !D);
-
-  // top right: shield, boost (a row each with two aboard) and water
-  const gy = D ? 40 : 0;
-  text('ESCUDO', 288, gy + 5, DIM);
-  gauge(328, gy + 7, 66, gShield / 100, gShield < 30 ? colRed : INK);
-  text('IMPULSO', 288, gy + 16, DIM);
-  crew.forEach((f, i) => gauge(328, gy + 18 + i * 4, 66, f.stam / 100, i ? GOLD : INK, D ? 2 : 5));
-  text('AGUA', 288, gy + 27, DIM);
-  box(327, gy + 28, 67, 7, EDGE);
-  for (let i = 0; i < 3; i++) box(328 + i * 22, gy + 29, 21, 5, i < gWater ? WATER : OFF);
-
-  // bottom left: height — the ground rising from the foot of the scale, the cloud base and
-  // the stratosphere ruled across it, and the crew
-  const foot = BH - 6;
-  const rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * 42;
-  box(D + 5, foot - 43, 6, 44, OFF);
-  box(D + 6, rung(gGnd), 4, foot - rung(gGnd), DIM);
-  box(D + 4, rung(CA), 8, 1, INK);
-  box(D + 4, rung(STRATO), 8, 1, INK);
-  crew.forEach((f, i) => box(D + 3, rung(f.z) - 1, 10, 2, i ? GOLD : INK));
-  text('ALTURA', D + 18, BH - 47, DIM);
-  text((gAgl * 10) | 0, D + 18, BH - 37, INK, 2);
-  text('METROS', D + 18, BH - 17, DIM);
-
-  // bottom middle: the radio — whoever is talking and the line as far as it has been said —
-  // or, with the radio quiet, what the buttons do
-  if (!D && talk[1]) {
-    // black words on a white card of their own, as wide as the longer line, so nothing in the
-    // scene shows through them (the marks and their names keep above it); the head stands free
-    box(124, BH - 57, Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 10, 46, INK);
-    face(talk[0], 92, BH - 30, 2.5);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 129, BH - 53, colRed, 1, 0, 1);
-    text(talk[1].slice(0, talkT * 40), 129, BH - 40, EDGE, 1, 0, 1);
-  } else if (!D && gT < 60) {
-    // with the radio quiet, for the first minute: what the buttons do
-    if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
-    panel(BH - 60);
+  const weather = `CALOR ${(30 + dry() * 12) | 0} · HUMEDAD ${(30 - dry() * 20) | 0} · VIENTO ${(20 + dry() * 50) | 0}`;
+  // With two aboard the picture is split — a view each, one above the other — and each has
+  // the same instruments beside their own view, in a column down the right: D is how far
+  // right that is (0 alone). There a long line is broken in two, to fit.
+  const D = crew[1] ? 260 : 0;
+  const fit = (s) => {
+    const i = s.lastIndexOf(' ', s.length / 2 + 4);
+    return s.length > 26 ? s.slice(0, i) + '\n' + s.slice(i + 1) : s;
+  };
+  if (D) {
+    box(260, 0, 140, BH, EDGE);
+    box(0, 149, BW, 2, OFF);
   }
-  radar(BW - 30, BH - 30, 24);
+  (D ? crew : [lead]).forEach((f, i) => {
+    const oy = i * 150;
+    const ink = f.id ? GOLD : INK;
+    // the score (their own, with two), the multiplier, and how long the crew has kept low
+    text('PUNTAJE', D + 6, oy + 5, DIM);
+    if (gAgl < 8) text('VUELO BAJO', D + 116, oy + 5, GOLD, 1, 2);
+    text(String(D ? f.sc : gScore).padStart(6, '0'), D + 6, oy + 16, ink, 2);
+    text('×' + gMult, D + 116, oy + 16, gMult > 1 ? GOLD : DIM, 2, 2);
+    if (gLow > 0.1) {
+      box(D + 5, oy + 32, (gLow / 10) * 110 + 2, 4, EDGE);
+      box(D + 6, oy + 33, (gLow / 10) * 110, 2, GOLD);
+    }
+
+    // shield and water (the crew's), and their own boost
+    const gy = oy + (D ? 34 : 0);
+    text('ESCUDO', 288, gy + 5, DIM);
+    gauge(328, gy + 7, 66, gShield / 100, gShield < 30 ? colRed : INK);
+    text('IMPULSO', 288, gy + 16, DIM);
+    gauge(328, gy + 18, 66, f.stam / 100, ink);
+    text('AGUA', 288, gy + 27, DIM);
+    box(327, gy + 28, 67, 7, EDGE);
+    for (let n = 0; n < 3; n++) box(328 + n * 22, gy + 29, 21, 5, n < gWater ? WATER : OFF);
+
+    // height: the ground rising from the foot of the scale, the cloud base and the
+    // stratosphere ruled across it, and the flyer
+    const foot = D ? oy + 145 : BH - 6;
+    const rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * 34;
+    box(D + 5, foot - 35, 6, 36, OFF);
+    box(D + 6, rung(gGnd), 4, foot - rung(gGnd), DIM);
+    box(D + 4, rung(CA), 8, 1, INK);
+    box(D + 4, rung(STRATO), 8, 1, INK);
+    box(D + 3, rung(f.z) - 1, 10, 2, ink);
+    text('ALTURA', D + 18, foot - 38, DIM);
+    text((f.agl * 10) | 0, D + 18, foot - 28, INK, 2);
+    radar(D ? 372 : BW - 30, D ? oy + 124 : BH - 30, D ? 19 : 24, f);
+    if (D) {
+      // which view is whose; the job in hand; and the news, or how the job is done
+      text(i + 1, 4, oy + 3, ink);
+      text(duty[0], 266, oy + 72, GOLD);
+      text(fit(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 84, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
+    }
+  });
 
   if (gShield < 30 && (now * 4) & 1) {
     // little shield left: the frame flashes
@@ -2972,24 +2960,45 @@ function drawHud() {
     box(0, 0, 2, BH, colRed);
     box(BW - 2, 0, 2, BH, colRed);
   }
-  if (!D) {
-    if (!gScore && blink) {
-      key(1, CXS - 112, BH - 71);
-      text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 78, GOLD, 2, 1);
-    }
-    if (pop && now < pop.t && project(pop.x, pop.y, pop.z)) text(pop.s, prX, prY - 22 + (pop.t - now) * 10, GOLD, 2, 1);
-    marks();
-  }
+  if (D) return;
 
-  // what is going on: across the top of the picture, or in the column
+  // alone: the job in hand across the top, and how it is done; with a fire burning, the
+  // weather it burns in
+  text(duty[0], CXS, 5, goal || sat ? (blink ? GOLD : INK) : GOLD, 1, 1);
+  text(duty[1], CXS, 17, INK, 1, 1);
+  if (fires[0]) text(weather, CXS, 29, colFire, 1, 1);
+  text('METROS', 18, BH - 17, DIM);
+
+  // bottom middle: the radio — whoever is talking and the line as far as it has been said —
+  // or, with the radio quiet, what the buttons do
+  if (talk[1]) {
+    // black words on a white card of their own, as wide as the longer line, so nothing in the
+    // scene shows through them (the marks and their names keep above it); the head stands free
+    box(124, BH - 57, Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 10, 46, INK);
+    face(talk[0], 92, BH - 30, 2.5);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 129, BH - 53, colRed, 1, 0, 1);
+    text(talk[1].slice(0, talkT * 40), 129, BH - 40, EDGE, 1, 0, 1);
+  } else if (gT < 60) {
+    // with the radio quiet, for the first minute: what the buttons do
+    if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
+    panel(BH - 60);
+  }
+  if (!gScore && blink) {
+    key(1, CXS - 112, BH - 71);
+    text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 78, GOLD, 2, 1);
+  }
+  if (pop && now < pop.t && project(pop.x, pop.y, pop.z)) text(pop.s, prX, prY - 22 + (pop.t - now) * 10, GOLD, 2, 1);
+  marks();
+
+  // what is going on, across the top of the picture
   if (gHacked) {
-    text('¡HACKEADO!', mx, my, colRed, D ? 2 : 3, 1);
-    text(fit('AGITA LA PALANCA Y MACHACA B1'), mx, my + 26, INK, 1, 1);
-    gauge(mx - (D ? 60 : 78), my + (D ? 54 : 40), D ? 120 : 156, gPurge, INK);
+    text('¡HACKEADO!', CXS, 48, colRed, 3, 1);
+    text('AGITA LA PALANCA Y MACHACA B1', CXS, 74, INK, 1, 1);
+    gauge(CXS - 78, 88, 156, gPurge, INK);
   } else if (gChan > 0) {
-    text(fit('HACKEO ENTRANTE: GIRA O DISPARA'), mx, my, colRed, D ? 1 : 2, 1);
-    gauge(mx - (D ? 60 : 78), my + (D ? 28 : 18), D ? 120 : 156, gChan, colRed);
-  } else if (gMsgT > 0) text(fit(gMsg), mx, my, INK, D || gMsg.length > 30 ? 1 : 2, 1);
+    text('HACKEO ENTRANTE: GIRA O DISPARA', CXS, 48, colRed, 2, 1);
+    gauge(CXS - 78, 66, 156, gChan, colRed);
+  } else if (gMsgT > 0) text(gMsg, CXS, 48, INK, gMsg.length > 30 ? 1 : 2, 1);
 }
 
 // Marks: what cannot be seen and where to go, each with what to do.
