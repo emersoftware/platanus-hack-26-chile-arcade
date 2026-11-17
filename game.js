@@ -650,11 +650,15 @@ function partAt(x, y, z, who) {
     return inEll(x, y - 24, z - 6.3, 7.5, 8.5, 6.2) || inEll(x, y - 14.5, z - 4.8, 3.4, 5, 2.9) ? BODY : 0;
   }
   if (who > 1) {
-    // Darwin's portrait: a flat, wide head drawn out into a pointed snout, golden eyes
-    // standing up at its sides
-    if (inEll(d - 7.3, y - 22.5, z - 9.5, 1.5, 1.7, 1.5)) return ENGINE;
-    if (inEll(d - 6, y - 22.5, z - 9, 2.7, 3, 2.7)) return GLASS;
-    return inEll(x, y - 27, z - 5.6, 8.5, 9.5, 5.2) || inEll(x, y - 17, z - 5.2, 4.8, 8, 3.2) || inEll(x, y - 9.5, z - 5.4, 1.8, 3.4, 1.5) ? BODY : 0;
+    // Darwin's portrait: a flat head, from above a triangle with hollow sides, drawn out to a
+    // snout whose tip turns up; small golden eyes stand at its sides
+    if (inEll(d - 5.9, y - 27, z - 8.3, 1, 1.2, 1)) return ENGINE;
+    if (inEll(d - 5, y - 27, z - 7.7, 1.9, 2.1, 1.9)) return GLASS;
+    const t = (y - 7) / 26; // 0 at the tip of the snout, 1 where the head is widest
+    if (t < 0 || t > 1.2) return 0;
+    const u = Math.min(t, 1);
+    const w = 0.9 + 9 * Math.pow(u, 1.7) * (t > 1 ? Math.sqrt(1 - ((t - 1) * 5) ** 2) : 1);
+    return d < w && Math.abs(z - 4.6 - 5.4 * (1 - u) ** 2) < (1 + 3.2 * Math.sqrt(u)) * Math.sqrt(1 - (d / w) ** 2) ? BODY : 0;
   }
   if (who) {
     if (inEll(d - 1.6, y - 8.5, z - 6.4, 1.3, 1.7, 1.3)) return GLASS; // eyes
@@ -2590,7 +2594,18 @@ function face(who, x, y, s, flip) {
   a[4] = rgtY * c - fwdY * n;
   a[0] = -a[4];
   a[1] = a[3];
+  a[2] = a[5] = a[6] = a[7] = 0;
   a[8] = 1;
+  for (let i = 0; i < 9; i += 3) {
+    // tipped towards the viewer — the frog well over, to show the triangle of its head
+    const d = a[i] * fwdX + a[i + 1] * fwdY;
+    const tc = who ? 0.96 : 0.8;
+    const ts = who ? 0.28 : 0.6;
+    const e = d * tc - a[i + 2] * ts - d;
+    a[i + 2] = d * ts + a[i + 2] * tc;
+    a[i] += fwdX * e;
+    a[i + 1] += fwdY * e;
+  }
   f.m = MODELS[who + 2];
   paint(f, x, y, -500, who ? s * 1.2 : s);
 }
