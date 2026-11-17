@@ -284,6 +284,7 @@ const GROUND = [
   [24, 140, 176, 100],
   [30, 98, 150, 86],
   [36, 90, 122, 80],
+  [38.5, 44, 92, 58], // forest
   [42, 86, 118, 142],
   [48, 112, 149, 184],
   [54, 168, 200, 224],
@@ -415,6 +416,26 @@ const HM = new Uint8Array((N >> 4) * (N >> 4)); // the tallest ground in and aro
 const GR = new Uint8Array(N * N); // its colour, as a place along the ground gradient
 const LIT = new Uint8Array(N * N); // how much light it catches (LIT_FLAT on level ground)
 const R8 = new Uint8Array(N * N); // a random byte per cell (sparkle timing)
+// The same three, smoothed: far away, where a cell is smaller than a pixel, the renderer reads
+// these, so that a distant range is a clean line and not a comb of needles.
+let HF;
+let GF;
+let LF;
+function soften(src) {
+  const rows = new Uint16Array(N * N);
+  const out = new Uint8Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    const x = i & NM;
+    for (let d = -2; d <= 2; d++) rows[i] += src[i - x + clamp(x + d, 0, NM)];
+  }
+  for (let i = 0; i < N * N; i++) {
+    let sum = 0;
+    for (let d = -2; d <= 2; d++) sum += rows[(i + d * N) & (N * N - 1)];
+    out[i] = sum / 25;
+  }
+  return out;
+}
+const RIPPLE = Int8Array.from({ length: 32 }, (v, i) => Math.round(Math.sin(i * 0.196) * 2.4)); // a swell on the water
 const GRAIN = new Float32Array(4096); // fine speckle laid over the ground close by, so it has a grain to rush past
 for (let i = 0; i < 4096; i++) GRAIN[i] = ((hash2(i & 63, i >> 6, 9) & 255) / 255 - 0.5) * 2.4;
 const CT = new Uint8Array(N * N); // cloud thickness per cell, in sixteenths
@@ -474,12 +495,27 @@ function buildWorld(seed) {
         else {
           g = e < 6 ? 24 + e * 0.7 : e < 34 ? 28 + (e - 6) * 0.36 : e < 90 ? 38 + (e - 34) * 0.29 : 54 + (e - 90 + jit * 4) * 0.5;
           if (e < 34) g += (f - 0.5) * 7 + (rough[i] - 0.5) * 5; // lighter and darker stretches of green
+          // forests: over the hills and in patches across the valley, clear of the rivers and
+          // the beach; their canopy stands a little proud of the ground, and uneven
+          if (e > 3.4 && e < 40 && cut > 0.045 && u - COAST > 0.03 && rough[(i + 300517) & (N * N - 1)] > (e > 9 ? 0.43 : 0.56)) {
+            g = 38.5 + jit * 2;
+            e += 1.3 + jit * 1.8;
+          }
         }
         g += (63 - g) * edge;
       }
       E[i] = e;
       GR[i] = clamp(Math.round(g * GS), 0, NG - 1);
       R8[i] = r & 255;
+    }
+  }
+
+  // The high ground is rounded off, in three passes each wider than the last: bare needles
+  // and knife edges of rock read badly from the valley.
+  for (const d of [2, 4, 6]) {
+    const raw = E.slice();
+    for (let i = 6 * N; i < N * N - 6 * N; i++) {
+      if (raw[i] > 30) E[i] += ((raw[i - d] + raw[i + d] + raw[i - d * N] + raw[i + d * N]) / 4 - raw[i]) * smooth(30, 55, raw[i]);
     }
   }
 
@@ -495,6 +531,9 @@ function buildWorld(seed) {
       LIT[i] = clamp(Math.round(LIT_FLAT + (lightOn(gx, gy) - 0.74) * 30), 0, NL - 1);
     }
   }
+
+  HF = soften(H);
+  LF = soften(LIT);
 
   // The tallest ground in each block and the blocks around it, so the renderer can tell
   // cheaply that nothing at a spot can reach into view.
@@ -538,10 +577,11 @@ function buildWorld(seed) {
     }
   }
   buildTowns(seed);
+  GF = soften(GR);
 }
 
 // Small towns, alternately in the valley and behind the beach: pale streets on the ground and
-// a huddle of low buildings (each: x, y, ground, height, half-width, tone).
+// a huddle of houses round a plaza and its church (each: x, y, ground, height, half-width, tone).
 const TOWNS = [];
 function buildTowns(seed) {
   TOWNS.length = 0;
@@ -565,10 +605,12 @@ function buildTowns(seed) {
         if (d < 4.4 + (r & 3) * 0.2 && GR[i] > G_SAND * GS) {
           for (let n = 0; n < 9; n++) GR[cell(cx + gx * 2.7 + (n % 3) - 1, cy + gy * 2.7 + ((n / 3) | 0) - 1)] = (G_SAND + 1) * GS;
         }
-        if (d > 3.5 || r % 4 === 0) continue;
-        const x = cx + gx * 2.7 + ((r >>> 4) % 10) / 12;
-        const y = cy + gy * 2.7 + ((r >>> 20) % 10) / 12;
-        b.push(x, y, groundAt(x, y), 1.2 + ((r >>> 8) % 3) * 0.7 + (d < 1.5 ? 1.6 : 0), 0.65 + ((r >>> 12) % 3) * 0.15, (r >>> 16) % 3);
+        if (d && d < 1.5) GR[i] = 27 * GS; // the plaza: a green square round the church
+        if (d > 3.5 || (d && d < 1.5) || r % 5 === 0) continue;
+        const x = cx + gx * 2.7 + (d ? ((r >>> 4) % 10) / 12 : 0);
+        const y = cy + gy * 2.7 + (d ? ((r >>> 20) % 10) / 12 : 0);
+        // the church stands in the middle: tone 3, tall and narrow under a spire
+        b.push(x, y, groundAt(x, y), d ? 1 + ((r >>> 8) % 3) * 0.45 : 3, d ? 0.7 + ((r >>> 12) % 3) * 0.15 : 0.6, d ? (r >>> 16) % 3 : 3);
       }
     }
     TOWNS.push({ x: cx, y: cy, b });
@@ -1833,6 +1875,7 @@ function drawWorld() {
     const po = fog * NR; // this step's cloud colours …
     const pg = fog * NG * NL; // … and ground colours
     const blend = m > BLEND_M; // cells are magnified here
+    const sharp = m > 1.7 ? 1 : m < 0.9 ? 0 : (m - 0.9) * 1.25; // … and here they are too small to tell apart
     const cloudRow = Math.min(b1 - m * (CA + CK), b2 - m2 * (CA + CK)); // the highest a cloud can show
 
     let relX = fwdX * v - rgtX * CXS * inv;
@@ -1903,9 +1946,9 @@ function drawWorld() {
         th = p + (r - p) * ty;
         ct = CTONE[ra | xa];
       } else {
-        h = H[i] * 0.5;
-        g = GR[i];
-        lit = LIT[i];
+        h = (HF[i] + (H[i] - HF[i]) * sharp) * 0.5;
+        g = sharp > 0.5 ? GR[i] : GF[i];
+        lit = sharp > 0.5 ? LIT[i] : LF[i];
         const ci = ((((wy + windY) | 0) & NM) << NS) | (((wx + windX) | 0) & NM);
         th = CT[ci];
         ct = CTONE[ci];
@@ -1964,7 +2007,8 @@ function drawWorld() {
       ya = ya < 0 ? 0 : (ya + 0.5) | 0;
       if (ya >= yb) continue;
 
-      if (g < G_SHALLOW * GS && ix && ((R8[i] + tick) & 255) < 1) lit += 9; // a glint on the water
+      // water moves: two swells crossing each other, and here and there a glint
+      if (g < G_SHALLOW * GS && ix) lit += RIPPLE[(wx * 3 + wy + now * 9) & 31] + RIPPLE[(wy * 2.3 - wx - now * 6) & 31] + (((R8[i] + tick) & 255) < 2 ? 9 : 0);
       // shadows: soft under the clouds, hard under the flyers
       const dz = CA - h;
       let dark = CT[((((wy - SUN_Y * dz + windY) | 0) & NM) << NS) | (((wx - SUN_X * dz + windX) | 0) & NM)] * 0.2;
@@ -2337,25 +2381,30 @@ function beam(x1, y1, z1, x2, y2, z2, w, colour, alpha) {
 
 // An upright block — a building — seen face on: lit on the sun's side, shaded on the other,
 // with a dark line for its roof.
+// Walls and roofs, each lit and in shade: white, cream and pale blue houses under tiles or
+// zinc, and the church.
 const WALLS = [
-  [pack(238, 236, 228), pack(158, 166, 186)],
-  [pack(216, 206, 184), pack(140, 138, 146)],
-  [pack(176, 196, 216), pack(104, 124, 152)],
+  [pack(244, 240, 228), pack(170, 176, 192), pack(196, 96, 70), pack(132, 66, 62)],
+  [pack(232, 214, 176), pack(156, 146, 140), pack(176, 84, 64), pack(118, 60, 58)],
+  [pack(190, 212, 230), pack(118, 138, 166), pack(120, 138, 156), pack(78, 92, 116)],
+  [pack(250, 248, 240), pack(178, 184, 200), pack(74, 98, 122), pack(48, 66, 92)],
 ];
-const colRoof = pack(74, 86, 110);
+// A building: walls with a lit side and a shaded one, under a pitched roof (a spire on the church).
 function slab(x, y, z, h, w, tone) {
   if (!project(x, y, z)) return;
   const hw = Math.max(0.6, w * prM);
-  const x0 = Math.max(0, Math.round(prX - hw));
-  const x1 = Math.min(BW, Math.round(prX + hw));
-  const y0 = Math.max(0, Math.round(prY - h * prM));
+  const eaves = prY - h * prM;
+  const ridge = eaves - (tone > 2 ? 2.4 : 0.8) * w * prM;
   const y1 = Math.min(BH, Math.round(prY));
-  const edge = prX + (sunR < 0 ? 0.25 : -0.25) * hw; // where the lit side meets the shaded one
-  for (let py = y0; py < y1; py++) {
-    for (let px = x0, p = py * BW + x0; px < x1; px++, p++) {
+  for (let py = Math.max(0, Math.round(ridge)); py < y1; py++) {
+    const roof = py < eaves;
+    const half = roof ? Math.max(0.5, (hw * 1.2 * (py - ridge)) / (eaves - ridge)) : hw;
+    const x1 = Math.min(BW, Math.round(prX + half));
+    const edge = prX + (sunR < 0 ? 0.25 : -0.25) * half; // where the lit side meets the shaded one
+    for (let px = Math.max(0, Math.round(prX - half)), p = py * BW + px; px < x1; px++, p++) {
       if (ZB[p] <= prV) continue;
       ZB[p] = prV;
-      FB[p] = py === y0 ? colRoof : WALLS[tone][px < edge === sunR < 0 ? 0 : 1];
+      FB[p] = WALLS[tone][(roof ? 2 : 0) + (px < edge === sunR < 0 ? 0 : 1)];
     }
   }
 }
