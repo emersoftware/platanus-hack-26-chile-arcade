@@ -1063,7 +1063,7 @@ function heal(n) {
   gShield = Math.min(100, gShield + n);
 }
 
-// kind: 0 exhaust · 1 flame · 2 flash · 3 water · 4 dust · 5 black smoke
+// kind: 0 exhaust · 1 flame · 2 flash · 3 water · 4 dust · 5 black smoke · 6 a solid piece of wreckage
 function puff(x, y, z, vx, vy, vz, life, kind, size) {
   let o = puffHead * PUFF_F;
   puffHead = (puffHead + 1) % PUFF_N;
@@ -1081,6 +1081,7 @@ function puff(x, y, z, vx, vy, vz, life, kind, size) {
 
 function boom(x, y, z, n) {
   for (let i = 0; i < n; i++) puff(x, y, z, spread() * 9, spread() * 9, spread() * 9, 0.35 + rand() * 0.5, i % 4 ? 1 : 5, 1.1);
+  for (let i = 0; i < n / 2; i++) puff(x, y, z, spread() * 30, spread() * 30, 4 + rand() * 16, 0.6 + rand() * 0.6, 6, 0.35 + rand() * 0.45);
   puff(x, y, z, 0, 0, 0, 0.16, 2, 3);
   burst(0.2 + n * 0.02, 0.25);
   tone(110, 30, 0.35, 'sine', 0.22);
@@ -1540,8 +1541,10 @@ function simulate(dt) {
     drones.forEach(aim);
     f.fireCd -= dt;
     if (play && held[f.key + '1'] && !gHacked && f.fireCd <= 0) {
-      f.fireCd = 0.12;
-      tone(1100 - f.id * 260, 320, 0.07, 'square', 0.03); // each flyer's guns have their own note
+      f.fireCd = 0.07;
+      // a zap that drops fast, from one of two notes in turn (each flyer has its own pair), on a click
+      tone(((f.alt ^= 1) ? 2000 : 1500) - f.id * 420, 150, 0.09, 'sawtooth', 0.032);
+      burst(0.02, 0.035, 0, 3);
       shots.push({ k: 0, x: f.x + nx * 3, y: f.y + ny * 3, z: f.z + nz * 3, vx: nx * SHOT, vy: ny * SHOT, vz: nz * SHOT, t: 0.7, to: f.lock, by: f });
     }
 
@@ -1868,7 +1871,7 @@ function simulate(dt) {
     puffs[o + 2] += puffs[o + 5] * dt;
     puffs[o + 3] *= drag;
     puffs[o + 4] *= drag;
-    if (puffs[o + 8] === 3) puffs[o + 5] -= 30 * dt; // spray falls back
+    if (puffs[o + 8] === 3 || puffs[o + 8] > 5) puffs[o + 5] -= 30 * dt; // spray and wreckage fall back
   }
 
   // ── the camera: behind the squad and a little above, swinging round after it in a turn
@@ -2425,14 +2428,17 @@ function drawFlames(f, s) {
 // Everything soft and round that drifts: exhaust, flames, flashes, spray, dust, black smoke.
 let PUFF_COL = [pack(96, 84, 92), 0, pack(255, 255, 255), pack(110, 180, 230), pack(150, 125, 95), pack(40, 44, 54)];
 let FLAMES = [pack(255, 232, 120), pack(255, 150, 44), pack(214, 60, 30)];
-let PUFF_DENSE = [110, 235, 255, 200, 150, 190];
+let PUFF_DENSE = [110, 255, 255, 200, 150, 220];
 function drawPuffs() {
   for (let o = 0; o < puffs.length; o += PUFF_F) {
     let age = puffs[o + 6];
     if (age <= 0) continue;
     let life = age / puffs[o + 7];
     let kind = puffs[o + 8];
-    soft(puffs[o], puffs[o + 1], puffs[o + 2], puffs[o + 9] * (0.5 + life * 1.5), kind === 1 ? FLAMES[(life * 3) | 0] : PUFF_COL[kind], (1 - life) * PUFF_DENSE[kind]);
+    // wreckage is solid: splinters drawn out along their flight, half of them glowing and half
+    // dark. The rest is soft
+    if (kind > 5) beam(puffs[o], puffs[o + 1], puffs[o + 2], puffs[o] - puffs[o + 3] * 0.09, puffs[o + 1] - puffs[o + 4] * 0.09, puffs[o + 2] - puffs[o + 5] * 0.09, puffs[o + 9], o % 20 ? colOutline : life < 0.5 ? FLAMES[0] : colFire, 255);
+    else soft(puffs[o], puffs[o + 1], puffs[o + 2], puffs[o + 9] * (0.5 + life * 1.5), kind === 1 ? FLAMES[(life * 3) | 0] : PUFF_COL[kind], (1 - life) * PUFF_DENSE[kind]);
   }
 }
 
