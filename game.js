@@ -254,8 +254,8 @@ const REDS = [
   [255, 0, 64],
   [255, 68, 68],
 ];
-const SKY_TOP = [100, 140, 190];
-const SKY_LOW = [225, 240, 250];
+const SKY_TOP = [36, 104, 214];
+const SKY_LOW = [168, 212, 248];
 
 const NR = 76; // steps in the ramp: 15 between each pair of blues
 const WHITE = NR - 1;
@@ -2639,28 +2639,25 @@ function box(x, y, w, h, colour) {
 const FONT =
   'd09GMgABAAAAAAesAAsAAAAAMwgAAAdgAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAgVwRCAreGMloATYCJAOBXAtwAAQgBQYHIBunJ1GUD8o8iJ8HtjH1oQVFgJYhgTKWLXFIHB7e3fW9AiEMaGDxLwhKl+69TKjR+BU6A8ksA5+RFWSFuUuFUAFRB6wuSEWrmdTO+z1j7k_sboJYVG2mnbeGy5WARte4VBHTGx4SrP8B6h93HeGxPP_7pT_Lf9QmJEqVpnEq_czsJrm0_ktTFAdy7zt338++3dCLRBjGM74LicN1oRAKozEiNpKnLEvVXRLfjV2lvIW6zyBMTBgmEA6BXcZqoO98B2IWZfgAwqNxHqjxRSf2TR7kKdH80NLUgLCkfIAAEAeM2UEaGhCAssNAQ5wNw0P4F0kjDEinhFrqmMg0zuARnrHJLoccc85VCJBGATZ1tDAJ6WMI7V+EMihXEmj+sqVc45+RII0MAHJ4v0tQQgXFlFNKGYG0+PsQTQyxxJFAIkkko2OQQhCTEYxkFAIRQiIA1QCsBMZB8h2gVwIJQBLvswE0M_QClxP4p0mwiZYEPgjCzYQ1m9AUQYU6pU14wDA+r2zU9UmNhY1fTzcsWvl3TffmgovD5cXG9LUb9EnFM_RJaqWxcrVvsL6d0tNjiisnNcSrmMzEjtYQPac4JiREz86PodSQaTGZrUYMPZuz6I+iJTEQfCVUoSuFv_tgA9EH23NyRgsEU7ohTbvwOg637CfVJExsiXM3gUFXk+iJhLfySUVjkjbKjgCxU_F9koImCIuKDGjamGE6okMczUhrcAtX8c87FakJde+NqyZa0MqgNDqWGz23gJDmZJM2pB5Y_DeljUYpv4Re1NHcSTeugWhBd25ykLBzyKgGuHR2A4T4Cq7moZ6zgGO6BvA9yWt+TJL7AqoOyA+7oF64dPy5m7UY152ikecxe3jycWacLsUQ3QMlMQw5ZLghVhSGahpZrZYqTKGeSY34ldLDPWcTvdrzOErnMSBcsPVIgyE01wVOIvZGtB+Pz6kQ6HYU0sLZ2rMUZ4mJ7hath6UXBLBja2F5oaFALaTV1fgkGgMOXMgv9iTD+II6u9qLUwN7cWKaNOy6yJ+4NrWMXzjLUxSIn3udzEhe_WCUV3t+gsEN8zhu05XrmfE2Szkwn+P86Ss_4UrPzw05uk2UzcH7ulynS5KxOyU9XY0KVeXOPaT2Bv70Hzsv2nLYWSzYI5F2WrvjsJKhJuTPQ9iaE8MBMYju5kBIrxsqLFIZH_xpXXLOkDAb6nqoBLIYMaSuuqNTTiLxc5ljny4N72seKtLVrprGF02Zvuxvk8EUE7Z4BVL37ptuL6dhJA8+f6vMyW4yg7ZjB80mkJyu0JV9+d0ZIl_JZsTEgCKndsWJDTvwVqsZl_W+ysSCiVMSC_4f26QIi+JkW6yx9cyDg0GzyW0np0j56GnTWE3jmKTrVDPxVBaLrq4UD9s5svnUQrrNk0hJdQdW9qWP+OgHjt8nFkO1YFm0WP_VK8BZPN3E4O0HOLSf7i0VJTMMF4KKwIaj56IGSBR8eQ_kLZJN4kC6OAeL_+YkaUP6lCoSonanFDD66wHWl9C9iyr_nlh6ZHhWdnhM0jWEJvLeDeg0oHTSEHmI1EPKoFN3j6QI0KDgOngdAaUvZ2QyGD5uoIVRX1wVXWJTbUk0gHPziCplDVILhpYAcLnFrSjEp0g3FE+LgFXkHTmNHZdJLiJFKDQxSF0cy4g0XkOi3CSn98qeefngdPvJCwcmak+x4IAzBoyybjp20SqkkgiLiBrxj_cw9_fQe2UP5G+e2YW_6rR4t_A94hsI1ky9+Q1DfHtzU0DDwE9objJjjAgZML1UP93I0rXH6JYc0FskLDN6oTNWS8ZY5xDSgDHFjEUUtzJVDZL5VBfZTG3+kU4MdE5YhwYTLiIRfHrHrfFL68TmMisRN3q1JzNUs46IBUHf71Hcfpiq0wPraiXekIosIwo66byuyeAif77tZo3D8zctpmzldcGtj8YzIPWFlGHMPwo0uWnrJBUhsbMDUe3HvEOV8xQBKMfWsjKIDFamHjobluS_WSJehMvmARcQj6sVHNIb5DawYP1BCWEpwPhmo5TtySrnGPe2iK7ck4S1+3i6+efDAUrui+rUwHZB4I_CyuHoIo4K394jQrK7d+zssDjIuDwNmkSpJK4JsSWW+cVvRiGYcoiufAsDvYI9VZBdF_3Tc5Xr3GxNs5zd5bUv2XPCUW5zu8Xh9zmFKYLFY7r54VDTCOFJhsGxI1KtetcbB7PM4K0Y7sPLFWDmaXSX_6o5eVQO_E1yavzGWq1p+CY6T8Bws0K3Lmv2dPguQOFVTolJQVP8vsZkbFdCdjmn7bpJmk6ZzklRkqBaPdTYMDGRxPISt0rtlNL5xTu_O8JWDee7cpoUtW8fMtCBSKrEBE6DJADIArFcS0sAATgXpT42JapHaSY_gI9nV14D+JSx++5_uSCDzxwURBIAQICWpgaIAwjL_I1K_b5YLSYA2F3W6v5MdW9OUWg3MqtM1PRayXVrCm5JOUrr38FDszveLBCvif439cP_GQRQzXesvMaufk+r2h6BdjUhKwMjYQY=';
 const LABELS = [];
-const SIZES = [0, 24, 42, 63, 104, 176]; // a letter is 0.4 of its size wide: 4.8 of the picture's pixels in the smallest
+const SIZES = [0, 24, 42, 63, 104]; // a letter is 0.4 of its size wide: 4.8 of the picture's pixels in the smallest
 let labelN = 0;
 let scene;
 // align: 0 from x · 1 centred on x · 2 ending at x; x and y are in the picture's own pixels
-// `plain`: 1 leaves off the dark edge, for lettering that has something solid behind it; a
-// colour draws the edge in that colour instead and heavier — in the letters' own colour,
-// that is bold type
+// `plain` leaves off the dark edge, for lettering that has something solid behind it
 function text(str, x, y, colour, size, align, plain) {
   let t = LABELS[labelN++];
   if (!t) LABELS.push((t = scene.add.text(0, 0, '', { fontFamily: 'V, monospace' })));
   str = String(str);
   size = SIZES[size || 1];
-  const ink = plain && plain !== 1 ? plain : '#0c1626';
-  const edge = plain === 1 ? 0 : plain ? size / 19 : Math.min(10, 2.5 + size / 12);
+  const edge = plain ? 0 : Math.min(10, 2.5 + size / 12);
   if (t.text !== str) t.setText(str);
   if (t.size !== size) t.setFontSize((t.size = size));
-  if (t.edge !== ink + edge) t.setStroke(ink, edge).setLetterSpacing(plain && plain !== 1 ? size / 16 : 0), (t.edge = ink + edge);
+  if (t.edge !== edge) t.setStroke('#0c1626', (t.edge = edge));
   if (t.ink !== colour) {
     t.ink = colour;
     t.setColor('#' + (((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255)).toString(16).padStart(6, '0'));
   }
-  return t.setOrigin((align || 0) / 2, 0.2).setPosition(x * PX, y * PX).setScale(1).setVisible(true);
+  t.setOrigin((align || 0) / 2, 0.2).setPosition(x * PX, y * PX).setVisible(true);
 }
 
 // The crew's portraits: their heads as voxel models, lit like the flyers, painted in front
@@ -2732,10 +2729,18 @@ function panel(y) {
   }
 }
 
-// The game's name in heavy red letters: black copies of it laid one behind another,
-// each smaller and lower, run back to a vanishing point under the middle of it.
+// The game's name, in numerals of its own: slabs on a grid three cells by five, heavy and
+// square, red, with a black body running back to a vanishing point under the middle of it.
+const SLABS = ['111001111100111', '111101101101111', '111001001001001', '111100111001111']; // 2 0 7 5
 function logo(y) {
-  for (let i = 16; i >= 0; i--) text('2075', CXS, y + i * 1.5, i ? pack(0, 0, 0) : pack(236, 28, 48), 5, 1, i ? '#000' : '#ec1c30').setScale(1 - i * 0.016);
+  for (let i = 14; i >= 0; i--) {
+    const k = 1 - i * 0.018;
+    SLABS.forEach((d, n) => {
+      for (let c = 0; c < 15; c++) {
+        if (d[c] > 0) box(CXS + (n * 40 - 77 + (c % 3) * 11.5) * k, y + i * 1.6 + ((c / 3) | 0) * 9 * k, 12 * k + 1, 9 * k + 1, i ? 0xff000000 : colRed);
+      }
+    });
+  }
 }
 
 // A name beside a mark: what it is, and what to do about it.
@@ -2788,13 +2793,12 @@ function mark(x, y, z, colour, label, always) {
   else tag(label, px, py - Math.sign(ey) * 13 - 5, colour);
 }
 
-// The radar: what is around the crew, nose up, under a sweeping hand.
+// The radar: what is around the crew, nose up.
 function radar(cx, cy, R) {
   for (let a = 0; a < TAU; a += 0.02) {
     // a ring, dark outside and pale inside, with nothing behind it
     for (let i = 0; i < 3; i++) box(cx + Math.sin(a) * (R + 1 - i), cy + Math.cos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
   }
-  for (let i = 0; i < R; i++) box(cx + Math.sin(now * 3) * i, cy - Math.cos(now * 3) * i, 1, 1, DIM);
   const sx = Math.sin(sq.yaw);
   const sy = -Math.cos(sq.yaw);
   const blip = (t, colour, size) => {
@@ -2834,12 +2838,12 @@ function drawHud() {
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     if (over) text('FIN DEL VUELO', CXS, 62, INK, 4, 1);
     else {
-      logo(26);
-      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 100, INK, 2, 1);
+      logo(34);
+      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 104, INK, 2, 1);
     }
     const naming = over && gName && gPos < 3;
     if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
-    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 118, GOLD, 2, 1);
+    else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 122, GOLD, 2, 1);
     if (naming) {
       text('¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
       text([...gName].map((c, i) => (i === gPos && blink ? ' ' : c)).join(' '), CXS, 140, GOLD, 3, 1);
@@ -2924,12 +2928,12 @@ function drawHud() {
   // bottom middle: the radio — whoever is talking and the line as far as it has been said —
   // or, with the radio quiet, what the buttons do
   if (talk[1]) {
-    // on a ground of its own, so nothing in the scene shows through the words (the marks
-    // and their names keep above it)
-    box(60, BH - 58, 282, 54, EDGE);
+    // black words on a white card of their own, as wide as the longer line, so nothing in the
+    // scene shows through them (the marks and their names keep above it); the head stands free
+    box(124, BH - 57, Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 10, 46, INK);
     face(talk[0], 92, BH - 30, 2.5);
-    text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 53, GOLD, 1, 0, 1);
-    text(talk[1].slice(0, talkT * 40), 128, BH - 39, INK, 1, 0, 1);
+    text(talk[0] ? 'MONITO' : 'DARWIN', 129, BH - 53, colRed, 1, 0, 1);
+    text(talk[1].slice(0, talkT * 40), 129, BH - 39, EDGE, 1, 0, 1);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
     if (!crew[1] && gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
