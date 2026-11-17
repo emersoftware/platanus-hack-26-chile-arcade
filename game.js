@@ -88,7 +88,7 @@ const SNOWFIELD = 100; // height the far east levels off at
 const CA = 60; // cloud base altitude
 const CK = 5; // thickest cloud
 const BLEND_M = 2.5; // cells drawn larger than this many pixels are blended with their neighbours
-const CLOUD_SOFT = 1.2; // thinner than this, a cloud is see-through
+const CLOUD_SOFT = 3.2; // thinner than this, a cloud is see-through
 const ZTOP = HMAX + 2; // the tallest thing in the world
 
 const VIEW_DIST = 700; // how far the eye reaches at ground level; from higher up it sees further
@@ -915,6 +915,7 @@ let gHit = 0; // the flash is a hit (red) and not a burst of light
 let gWhy = ''; // what hurt the crew last
 let pop = null; // points won, shown for a moment where they were won
 let gRain = 0; // how hard it is raining, 0 to 1
+let gWet = 0; // … as the crew gets it: none of it, once they are up through the clouds
 const drones = [];
 const shots = []; // k: 0 the crew's, 1 the enemy's, 2 a load of water
 const fires = [];
@@ -1014,7 +1015,7 @@ function sound() {
     hiss.connect(thin).connect(RAIN).connect(OUT);
     hiss.start();
   }
-  RAIN.gain.setTargetAtTime(gRain * 0.05, t, 0.3);
+  RAIN.gain.setTargetAtTime(gWet * 0.05, t, 0.3);
   const thr = gMode === OVER ? 0 : crew.reduce((sum, f) => sum + f.thr, 0) / crew.length;
   ENGINE_TONE.frequency.setTargetAtTime(44 + thr * 62, t, 0.08);
   ENGINE_OPEN.frequency.setTargetAtTime(110 + thr * 950, t, 0.08);
@@ -1185,9 +1186,11 @@ function modelPoint(f, ma, mb, mc, out, o) {
 
 function spawnDrone(k) {
   if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ UN\nGIRO (BOTÓN 2 O 3) ANTES DE QUE ENTRE.', 2);
-  // they come in from one flank or the other, tougher as the flight goes on; the first ones
-  // hold their fire a while, and a hacker takes enough killing to get its hack started
-  drones.push({ k, hp: k ? 12 : 2 + Math.min(3, (gT / 90) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: rand() < 0.5 ? -110 : 110, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: gT < 30 ? 6 : 1.5 + rand(), ch: 0, x: 0, y: 0, z: 0 });
+  // they come in from one flank or the other, tougher as the flight goes on. A drone loiters,
+  // circling the crew (for less time the longer the flight has lasted), and then dives at one
+  // of them; a hacker takes enough killing to get its hack started
+  const side = rand() < 0.5 ? -1 : 1;
+  drones.push({ k, hp: k ? 12 : 2 + Math.min(3, (gT / 90) | 0), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: 0 });
 }
 
 // A spot of ground near the squad, mostly ahead of it, that passes the test.
@@ -1207,6 +1210,7 @@ const WOOD = (x, y) => GR[cell(x, y)] > 37 * GS && GR[cell(x, y)] < 40 * GS && g
 
 function light(x, y) {
   fires.push({ x, y, z: groundAt(x, y) });
+  for (let i = 0; i < 9; i++) GR[cell(x + (i % 3) - 1, y + ((i / 3) | 0) - 1)] = 142; // it leaves the ground charred
 }
 
 // Fire weather, worse as the flight goes on: 0 a mild day, 1 the worst — heat, dry air and wind.
@@ -1329,6 +1333,7 @@ function simulate(dt) {
   gShake *= Math.exp(-5 * dt);
   gFlash *= Math.exp(-4 * dt);
   gRain += ((em && em.k ? 1 : 0) - gRain) * (1 - Math.exp(-0.8 * dt));
+  gWet = gRain * clamp((CA + 3 - sq.z) / 6, 0, 1);
   const play = gMode === PLAY;
   if (talk[1]) {
     // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
@@ -1666,7 +1671,7 @@ function simulate(dt) {
     tone(520, 180, 0.12, 'sawtooth', 0.025);
   };
 
-  // ── drones keep a station ahead of the squad, weaving about it. Shooters fire; hackers
+  // ── drones circle the squad and then dive at it; hackers keep a station ahead, and
   // need a few seconds of clear signal to break in, and a roll cuts the signal
   const rolling = crew.some((f) => f.rollT > 0);
   gChan = 0;
@@ -1683,24 +1688,51 @@ function simulate(dt) {
       continue;
     }
     if (now > d.nt) {
-      d.ta = d.k ? 36 + rand() * 12 : 40 + rand() * 35;
-      d.ts = spread() * (d.k ? 12 : 18);
+      d.ta = 36 + rand() * 12;
+      d.ts = spread() * 12;
       d.tu = spread() * 6 + 2;
       d.nt = now + 1.5 + rand() * 2.5;
     }
-    const e = 1 - Math.exp(-1.3 * dt);
-    d.a += (d.ta - d.a) * e;
-    d.s += (d.ts - d.s) * e;
-    d.u += (d.tu - d.u) * e;
+    if (!d.k) {
+      // its orbit: an oval round the crew, set forward so it spends most of it ahead of them
+      d.o += d.w * dt;
+      d.ta = 16 + 40 * Math.cos(d.o);
+      d.ts = 34 * Math.sin(d.o);
+    }
+    const kz = d.kz; // whoever it is diving at
+    if (kz) {
+      // a straight run at them. Shot down, it is gone; a roll throws it wide; else it hits
+      const da = -d.a;
+      const ds = kz.s - d.s;
+      const du = kz.z - sq.z - d.u;
+      const l = Math.hypot(da, ds, du);
+      const k = Math.min(1, (46 * dt) / l);
+      d.a += da * k;
+      d.s += ds * k;
+      d.u += du * k;
+      if (l < 2.6) {
+        boom(d.x, d.y, d.z, 30);
+        if (kz.rollT > 0) gain(150, '¡ESQUIVADO!');
+        else hurt(kz, 18, '¡KAMIKAZE!');
+        drones.splice(i, 1);
+        continue;
+      }
+    } else {
+      const e = 1 - Math.exp(-1.3 * dt);
+      d.a += (d.ta - d.a) * e;
+      d.s += (d.ts - d.s) * e;
+      d.u += (d.tu - d.u) * e;
+    }
     d.x = sq.x + cfx * d.a - cfy * d.s;
     d.y = sq.y + cfy * d.a + cfx * d.s;
     d.z = Math.max(sq.z + d.u, groundAt(d.x, d.y) + 3);
     if (!play) continue;
     if (!d.k) {
       d.cd -= dt;
-      if (d.cd < 0 && d.a < 90) {
-        d.cd = 2.2 + rand() * 2.4;
-        shootAt(d, 0.6);
+      if (d.cd < 0 && !kz) {
+        d.kz = crew[(rand() * n) | 0];
+        tone(300, 1100, 0.5, 'sawtooth', 0.07); // it winds up
+        tell(1, 'LOS DRONES ORBITAN Y LUEGO SE LANZAN:\nDERRÍBALOS O ESQUÍVALOS CON UN GIRO.', 1);
       }
     } else if (!gHacked && gImmune <= 0 && d.a < 70) {
       d.ch = rolling ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
@@ -1929,6 +1961,7 @@ function drawWorld() {
   const camX = cam.x + BIG;
   const camY = cam.y - Math.floor(cam.y / N) * N + 4 * N;
   const tick = (now * 15) | 0;
+  const over = gRain * 56; // a storm closes the sky: this much more cloud everywhere, in sixteenths
   const A = S * (k + q * Math.max(zr, 1)); // screen rows of sea per unit of depth, at the flyer
   const view = VIEW_DIST + zr * 4; // the eye reaches further from higher up, and the haze starts further out
   const fogStart = view * 0.27;
@@ -2025,14 +2058,14 @@ function drawWorld() {
         r = CT[rb | xa];
         p += (CT[ra | xb] - p) * tx;
         r += (CT[rb | xb] - r) * tx;
-        th = p + (r - p) * ty;
+        th = p + (r - p) * ty + over;
         ct = CTONE[ra | xa];
       } else {
         h = (HF[i] + (H[i] - HF[i]) * sharp) * 0.5;
         g = sharp > 0.5 ? GR[i] : GF[i];
         lit = sharp > 0.5 ? LIT[i] : LF[i];
         const ci = ((((wy + windY) | 0) & NM) << NS) | (((wx + windX) | 0) & NM);
-        th = CT[ci];
+        th = CT[ci] + over;
         ct = CTONE[ci];
       }
 
@@ -2093,7 +2126,7 @@ function drawWorld() {
       if (g < G_SHALLOW * GS && ix) lit += RIPPLE[(wx * 3 + wy + now * 9) & 31] + RIPPLE[(wy * 2.3 - wx - now * 6) & 31] + (((R8[i] + tick) & 255) < 2 ? 9 : 0);
       // shadows: soft under the clouds, hard under the flyers
       const dz = CA - h;
-      let dark = CT[((((wy - SUN_Y * dz + windY) | 0) & NM) << NS) | (((wx - SUN_X * dz + windX) | 0) & NM)] * 0.2;
+      let dark = (CT[((((wy - SUN_Y * dz + windY) | 0) & NM) << NS) | (((wx - SUN_X * dz + windX) | 0) & NM)] + over) * 0.2;
       if (dark > LIT_SHADOW || (nSJ && shadowed(relX, relY, h))) dark = LIT_SHADOW;
       lit = (lit - dark) | 0;
       const c = GPAL[pg + g * NL + (lit < 0 ? 0 : lit)];
@@ -2368,10 +2401,10 @@ function blot(r, colour, dens) {
 }
 
 // The burners. Each flame is a slim string of soft lights from the nozzle to its tip:
-// a white-hot root, then ice blue, deepening as it cools. It grows with the throttle and leaps out
+// a white-hot root, then yellow and orange, deepening as it cools. It grows with the throttle and leaps out
 // in a dash, it flickers, it shows shock diamonds when the burners are wide open, and in a
 // turn it trails round the inside of the curve the flyer has flown.
-const HEAT = [pack(255, 255, 255), pack(214, 240, 255), pack(150, 208, 250), pack(96, 160, 236), pack(60, 108, 204)];
+const HEAT = [pack(255, 250, 220), pack(255, 214, 110), pack(255, 160, 50), pack(244, 112, 30), pack(190, 70, 24)];
 const TIP = new Float32Array(3);
 // `s` is the size of the flyer's design unit on screen, as it was just drawn
 function drawFlames(f, s) {
@@ -2470,6 +2503,8 @@ function beam(x1, y1, z1, x2, y2, z2, w, colour, alpha) {
 // with a dark line for its roof.
 const colRed = pack(255, 40, 70);
 const colShot = pack(200, 235, 255);
+const colMud = pack(120, 86, 58);
+const colFoam = pack(206, 184, 150);
 const STORM = pack(56, 66, 92);
 const colFire = pack(255, 160, 60);
 
@@ -2482,7 +2517,7 @@ function drawThings() {
     const dy = sq.y - d.y;
     const dz = sq.z - d.z;
     const l = (d.r * 0.8) / Math.hypot(dx, dy, dz);
-    ball(d.x, d.y, d.z, d.r, d.k ? ENGINE : HEAD);
+    ball(d.x, d.y, d.z, d.r, d.k ? ENGINE : d.kz && (now * 12) & 1 ? GLOW : HEAD, d.kz); // diving, it flashes
     ball(d.x + dx * l, d.y + dy * l, d.z + dz * l, d.r * 0.45, d.k ? GLOW : PLUME, d.k);
     const bob = Math.sin(now * 14 + d.s) * 0.3;
     ball(d.x + rgtX * d.r * 1.5, d.y + rgtY * d.r * 1.5, d.z + bob, d.r * 0.5, BODY);
@@ -2497,15 +2532,27 @@ function drawThings() {
     ball(sat.x, sat.y, sat.z - sat.r * 0.8, sat.r * 0.5, GLOW, 1);
     beam(sat.x - rgtX * 14, sat.y - rgtY * 14, sat.z, sat.x + rgtX * 14, sat.y + rgtY * 14, sat.z, 2.6, JPAL[GLASS * NLV + 9], 255);
   }
-  for (const f of fires) ball(f.x, f.y, f.z + 0.6, 1.3 + Math.sin(now * 17 + f.x) * 0.3, FIRE, 1);
+  for (const f of fires) {
+    // three tongues of flame each, yellow at the root and red at the tip, licking about
+    for (let j = 0; j < 3; j++) {
+      const tall = 0.75 + 0.3 * Math.sin(now * 9 + f.x * 7 + j * 2);
+      for (let i = 0; i < 5; i++) {
+        soft(f.x + (j - 1) * 1.1 + Math.sin(now * 7 + i + j * 3) * i * 0.12, f.y + ((j * 7) % 3) - 1, f.z + 0.4 + i * tall, 1.2 - i * 0.2, FLAMES[i >> 1], 235 - i * 25);
+      }
+    }
+  }
   for (const f of folk) {
     // a light on the ground and a tall beacon above it
     ball(f.x, f.y, f.z + 0.6, 0.7, PLUME, 1);
     beam(f.x, f.y, f.z + 1, f.x, f.y, f.z + 26, 0.5, colTrail, 110 + ((Math.sin(now * 6) * 60) | 0));
   }
   if (em && em.k) {
-    // the head of the flood: a low roll of mud right across the river
-    for (let i = -3; i <= 3; i++) ball(em.x, em.y + i * 2.6, em.z + 0.5 + Math.abs(Math.sin(now * 5 + i)) * 0.5, 1.5, MUD);
+    // a wall of brown water from bank to bank, under a ragged crest of foam
+    beam(em.x, em.y - 10, em.z + 1, em.x, em.y + 10, em.z + 1, 2.2, colMud, 255);
+    for (let i = -5; i < 5; i++) {
+      const lift = (j) => em.z + 2.2 + Math.sin(now * 7 + j * 1.9) * 0.45;
+      beam(em.x - 0.4, em.y + i * 2, lift(i), em.x - 0.4, em.y + i * 2 + 2, lift(i + 1), 0.5, colFoam, 255);
+    }
   }
   // a tall light over wherever help is needed
   const goal = folk[0] || fires[0];
@@ -2523,7 +2570,7 @@ function drawThings() {
   }
 
   for (const s of shots) {
-    if (!s.k) beam(s.x, s.y, s.z, s.x - s.vx * 0.025, s.y - s.vy * 0.025, s.z - s.vz * 0.025, 0.6, WATER, 255);
+    if (!s.k) beam(s.x, s.y, s.z, s.x - s.vx * 0.025, s.y - s.vy * 0.025, s.z - s.vz * 0.025, 0.6, colFire, 255);
     else ball(s.x, s.y, s.z, s.k === 2 ? 1 : s.r, s.k === 2 ? GLASS : GLOW, s.k === 1);
   }
 }
@@ -2574,7 +2621,7 @@ const WATER = pack(110, 180, 230);
 const EDGE = pack(12, 22, 38); // the dark edge (the lettering's is the same colour)
 const OFF = pack(44, 62, 84); // a lamp that is not lit
 const TOP = 16; // marks keep this far from the top of the screen …
-let VB = BH - 16; // … and stop here at the foot (higher, while the radio is talking)
+const VB = BH - 62; // … and stop here, clear of the instruments, the radio and the panel at the foot
 
 function box(x, y, w, h, colour) {
   const x0 = Math.max(0, x | 0);
@@ -2803,8 +2850,8 @@ function drawHud() {
     } else {
       if (over)
         text(
-          gWhy === '¡IMPACTO!'
-            ? 'CONSEJO: MANTÉN EL BOTÓN 1 Y DERRIBA LOS DRONES ANTES DE QUE DISPAREN'
+          gWhy === '¡KAMIKAZE!'
+            ? 'CONSEJO: DERRIBA LOS DRONES ANTES DE QUE SE LANCEN, O ESQUÍVALOS CON UN GIRO'
             : gWhy === 'HACK'
               ? 'CONSEJO: SI TE HACKEAN, AGITA LA PALANCA Y MACHACA EL BOTÓN 1'
               : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
@@ -2876,10 +2923,9 @@ function drawHud() {
 
   // bottom middle: the radio — whoever is talking and the line as far as it has been said —
   // or, with the radio quiet, what the buttons do
-  VB = BH - (talk[1] ? 62 : 16);
   if (talk[1]) {
-    // on a ground of its own, so nothing in the scene shows through the words; the marks
-    // and their names keep above it
+    // on a ground of its own, so nothing in the scene shows through the words (the marks
+    // and their names keep above it)
     box(60, BH - 58, 282, 54, EDGE);
     face(talk[0], 92, BH - 30, 2.5);
     text(talk[0] ? 'MONITO' : 'DARWIN', 128, BH - 53, GOLD, 1, 0, 1);
@@ -2918,7 +2964,7 @@ function drawHud() {
   } else if (gMsgT > 0) text(gMsg, CXS, 48, INK, gMsg.length > 30 ? 1 : 2, 1);
 
   // marks: what cannot be seen and where to go, each with what to do
-  for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : 'DRON');
+  for (const d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : d.kz ? '¡KAMIKAZE! GIRA' : 'DRON', d.kz);
   if (sat) mark(sat.x, sat.y, sat.z, colRed, sat.z - sq.z > 30 ? 'SATÉLITE: SUBE' : 'SATÉLITE: DISPARA', 1);
   if (folk[0]) mark(goal.x, goal.y, goal.z + 4, INK, 'RESCATE: PASA BAJITO', 1);
   else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, gWater ? 'FUEGO: SUELTA B5' : 'FUEGO', gWater);
@@ -2960,10 +3006,11 @@ function drawFrame() {
   drawThings();
   if (alive) crew.forEach(drawTrails);
   drawPuffs();
-  if (gRain > 0.02) {
-    // a storm: the light goes grey, and the rain comes down slanting
-    for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], STORM, (gRain * 100) | 0);
-    for (let n = 0; n < gRain * 160; n++) {
+  if (gWet > 0.02) {
+    // under a storm the light goes grey and the rain comes down slanting (above its clouds
+    // there is none of it)
+    for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], STORM, (gWet * 100) | 0);
+    for (let n = 0; n < gWet * 160; n++) {
       const x = (n * 53.7 + now * 90) % (BW + 40);
       const y = (n * 97.3 + now * (520 + (n % 7) * 45)) % (BH + 30);
       for (let i = 0; i < 8; i++) {
