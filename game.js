@@ -2553,13 +2553,22 @@ function drawThings() {
   if (goal) beam(goal.x, goal.y, goal.z + 30, goal.x, goal.y, goal.z + 150, 1.2, folk[0] ? colTrail : colFire, 80);
   if (wet) beam(wet.x, wet.y, wet.z + 8, wet.x, wet.y, wet.z + 150, 1.2, WATER, 110);
   if (gMode !== OVER && (fires[0] || gWater)) {
-    // the buckets: pale when empty, blue with water in them, trailing a little behind
+    // the buckets, trailing a little behind
     for (let f of crew) {
       let x = f.x - Math.sin(f.yaw) * 2;
       let y = f.y + Math.cos(f.yaw) * 2;
       let z = Math.max(groundAt(x, y) + 0.5, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
       beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
-      ball(x, y, z, 0.55, gWater ? GLASS : PLUME);
+      if (project(x, y, z)) {
+        // a cut-off cone, mouth up: orange, lit on one side, with a pale rim — or, with water
+        // in it, a blue one
+        let r = prM * 0.8;
+        for (let i = 0; i < r * 1.5; i++) {
+          let w = r * (1 - i / r / 3.2);
+          box(prX - w, prY + i, w, 1, i < 2 ? (gWater ? WATER : INK) : colFire);
+          box(prX, prY + i, w, 1, i < 2 ? (gWater ? WATER : DIM) : mix(colFire, 0, 70));
+        }
+      }
     }
   }
 
