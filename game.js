@@ -122,6 +122,8 @@ function clamp(v, a, b) {
   return v < a ? a : v > b ? b : v;
 }
 
+// The map goes round, north to south: a distance that way, taken the short way.
+let W = (d) => d - Math.round(d / N) * N;
 function wrapAngle(a) {
   a = (a + Math.PI) % TAU;
   return (a < 0 ? a + TAU : a) - Math.PI;
@@ -815,7 +817,6 @@ function makeFlyer(id) {
     x: 0,
     y: 0,
     z: 0,
-    s: 0, // how far to the side of the squad it flies
     yaw: 0,
     bank: 0,
     pitch: 0,
@@ -832,6 +833,27 @@ function makeFlyer(id) {
     rest: 0,
     kick: 0, // the bounce off the ground
     sc: 0, // what this one has scored
+    // each of the crew has their own camera, and their own flight: shield, loads of water
+    // aboard, the hack (under way, and how far shaken off, and how far one has got with
+    // breaking in), the reward for flying low, what they are told, the nearest water
+    c: { x: 0, y: 0, yaw: 0, zr: 0, S: 1, q: 0.01, k: 0.2, cy: BH / 2 },
+    sh: 100,
+    w: 0,
+    fill: 0,
+    hk: 0,
+    pg: 0,
+    ch: 0,
+    im: 0,
+    low: 0,
+    mul: 1,
+    shk: 0,
+    fl: 0,
+    hit: 0, // the flash is a hit (red) and not a burst of light
+    why: '', // what hurt them last
+    msg: '',
+    mt: 0,
+    wet: null, // while there is a fire and no water aboard: the nearest water, and when it was looked for
+    wt: 0,
     graze: 0, // counts down after a touch of the ground: forgiven at first, then not
     inv: 0, // seconds of safety after a hit
     fireCd: 0,
@@ -856,11 +878,13 @@ function makeFlyer(id) {
 let lead = makeFlyer(0);
 let mate = makeFlyer(1);
 let crew = [lead]; // who is flying: Darwin alone, or with the monito once player two joins
-let sq = { x: 0, y: 0, z: 0, yaw: 0 }; // the squad: the point the crew fly about, which the camera follows
+let team = [lead]; // everyone who took off on this flight (the crew is who is still flying)
+let me = lead; // whose turn it is: the one being flown, or whose picture is being drawn
+let NAMES = ['DARWIN', 'MONITO'];
 let puffs = new Float32Array(PUFF_N * PUFF_F);
 let puffHead = 0;
 
-let cam = { x: 0, y: 0, yaw: 0, zr: 0, S: 1, q: 0.01, k: 0.2, cy: BH / 2 };
+let cam = lead.c;
 let now = 0;
 let windX = 0;
 let windY = 0;
@@ -873,7 +897,7 @@ let SHOT = 240; // how fast the crew's shots fly
 // What the whole game shares, each on its own: the mode, the score, the one shield …
 let gMode = TITLE;
 let gT = 0; // seconds in this mode
-let gScore = 0;
+let gWho = null; // whose initials they are
 let gName = ''; // initials being entered for the table of records, if the flight earned a place
 let gPos = 0; // which of the three is being chosen
 // The five best flights, [initials, score], best first: kept by the cabinet between visits
@@ -891,7 +915,8 @@ function loadTop() {
   } catch (e) {}
 }
 function saveTop() {
-  BEST.push([gName, gScore]);
+  BEST.push([gName, gWho.sc]);
+  gWho.ok = 1;
   BEST.sort((a, b) => b[1] - a[1]).length = Math.min(5, BEST.length);
   try {
     let safe = window.platanusArcadeStorage;
@@ -899,29 +924,13 @@ function saveTop() {
     else localStorage.setItem(KEY, JSON.stringify(BEST));
   } catch (e) {}
 }
-let gMult = 1; // flying low multiplies every reward
-let gLow = 0;
-let gShield = 100; // one shield for the whole crew
-let gAgl = 0; // the lowest of the crew's heights above the ground, and the ground's height, for the panel
-let gGnd = 0;
-let gWater = 0; // loads of water aboard
-let gFill = 0;
-let gHacked = 0;
-let gPurge = 0; // how far the crew have shaken the hacker off
-let gChan = 0; // how far a hacker has got with breaking in
-let gImmune = 0;
 let gSpawnT = 0;
 let gHackT = 0;
 let gEmT = 0;
 let gEmN = 0;
-let gMsg = '';
-let gMsgT = 0;
-let gShake = 0;
-let gFlash = 0;
+let gSpawnN = 0;
 let demo = 0; // the title's show: which turn it is — a fire, or a rescue …
 let demoT = 0; // … and how long it has been going
-let gHit = 0; // the flash is a hit (red) and not a burst of light
-let gWhy = ''; // what hurt the crew last
 let pop = null; // points won, shown for a moment where they were won
 let gRain = 0; // how hard it is raining, 0 to 1
 let gWet = 0; // … as the crew gets it: none of it, once they are up through the clouds
@@ -931,8 +940,6 @@ let fires = [];
 let folk = []; // people waiting for rescue
 let em = null; // the emergency under way: k 0 a wildfire, 1 a mudslide
 let ROPE = 4; // how far below a flyer its water bucket hangs
-let wet = null; // while there is a fire and no water aboard: the nearest water, and when it was looked for
-let wetT = 0;
 let QUEB = []; // cells on the rivers where they come out into the valley: where a flood starts
 
 // The crew talk: Darwin (0) and the monito (1) tell the story and say what to do. Lines wait
@@ -1031,10 +1038,11 @@ function sound() {
   // the music: sixteen steps round four chords — a bass, a climbing figure over it, and, once
   // there are enemies about, a drum and a hiss to drive it. A hack sours the harmony.
   if (nextBeat < t - 1) nextBeat = t;
-  let hot = gMode === PLAY && (drones.length || gHacked);
+  let hk = crew.some((f) => f.hk);
+  let hot = gMode === PLAY && (drones.length || hk);
   while (nextBeat < t + 0.1) {
     let step = beatN++ & 15;
-    let root = [0, 0, -4, -2][step >> 2] + (gHacked ? 6 : 0);
+    let root = [0, 0, -4, -2][step >> 2] + (hk ? 6 : 0);
     let wait = nextBeat - t;
     if (!(step & 1)) tone(pitch(root - 12), pitch(root - 12), 0.27, 'triangle', 0.1, wait);
     if (hot || !(step & 3)) tone(pitch(root + [12, 19, 24, 19][step & 3]), pitch(root + 12), 0.11, 'square', 0.016, wait);
@@ -1051,23 +1059,27 @@ function cell(x, y) {
   return ((Math.floor(y) & NM) << NS) | clamp(Math.floor(x), 0, NM);
 }
 
-function say(text, secs) {
-  gMsg = text;
-  gMsgT = secs || 1.8;
+// One of the crew, or all of them.
+let them = (who) => (who ? [who] : [...crew]);
+function say(text, secs, who) {
+  for (let f of them(who)) {
+    f.msg = text;
+    f.mt = secs || 1.8;
+  }
 }
 
-// `who` earned them (the whole crew, if no one in particular)
+// `who` earned them (each of the crew, if no one in particular), at their own multiplier
 function gain(points, text, who) {
-  points *= gMult;
-  gScore += points;
-  for (let f of who ? [who] : crew) f.sc += points;
-  say(text + ' +' + points);
+  for (let f of them(who)) {
+    f.sc += points * f.mul;
+    say(text + ' +' + points * f.mul, 0, f);
+  }
   tone(660, 660, 0.07, 'triangle', 0.1); // two notes, rising
   tone(990, 990, 0.14, 'triangle', 0.1, 0.07);
 }
 
-function heal(n) {
-  gShield = Math.min(100, gShield + n);
+function heal(n, who) {
+  for (let f of them(who)) f.sh = Math.min(100, f.sh + n);
 }
 
 // kind: 0 exhaust · 1 flame · 2 flash · 3 water · 4 dust · 5 black smoke · 6 a solid piece of wreckage
@@ -1094,62 +1106,77 @@ function boom(x, y, z, n) {
   tone(110, 30, 0.35, 'sine', 0.22);
 }
 
-function damage(d) {
-  gShield -= d;
-  if (gShield > 0 || gMode !== PLAY) return;
-  gShield = 0;
-  for (let f of crew) boom(f.x, f.y, f.z, 40);
-  gMode = OVER;
-  gT = 0;
-  gHacked = 0;
-  gName = gScore && (!BEST[4] || gScore > BEST[4][1]) ? 'AAA' : ''; // a place in the table: initials, then
+// Whose initials are wanted next: the first of the team with a place in the table.
+function next() {
+  gWho = team.find((f) => !f.ok && f.sc && (!BEST[4] || f.sc > BEST[4][1]));
+  gName = gWho ? 'AAA' : '';
   gPos = 0;
+}
+
+function damage(d, who) {
+  for (let f of them(who)) {
+    f.sh -= d;
+    if (f.sh > 0 || gMode !== PLAY) continue;
+    f.sh = f.hk = 0;
+    boom(f.x, f.y, f.z, 40);
+    if (crew[1]) crew.splice(crew.indexOf(f), 1); // their partner flies on, with the whole screen
+    else {
+      gMode = OVER;
+      gT = 0;
+      next();
+    }
+  }
 }
 
 function hurt(f, d, why) {
   if (f.inv > 0 || gMode !== PLAY) return;
   f.inv = 1;
-  gShake = 1;
-  gFlash = 0.5;
-  gHit = 1;
-  gWhy = why;
-  say(why, 1.2);
+  f.shk = f.hit = 1;
+  f.fl = 0.5;
+  f.why = why;
+  say(why, 1.2, f);
   tone(220, 50, 0.35, 'sawtooth', 0.2);
   burst(0.15, 0.15);
-  damage(d);
+  damage(d, f);
 }
 
 function resetFlight() {
-  sq.x = N * 0.41; // over the valley, heading north: sea to the left, cordillera to the right
-  sq.y = N * 0.5;
-  sq.yaw = cam.yaw = 0.12;
-  cam.x = sq.x;
-  cam.y = sq.y;
+  let c = lead.c;
+  crew = [lead];
+  lead.x = c.x = N * 0.41; // over the valley, heading north: sea to the left, cordillera to the right
+  lead.y = c.y = N * 0.5;
+  lead.yaw = c.yaw = 0.12;
   lead.z = CRUISE_ALT;
   lead.trailLen = 0;
   puffs.fill(0);
 }
 
-// Player two comes in: the crew spread out to either side of the squad.
+// A flight begins, for one of the crew.
+function fresh(f) {
+  Object.assign(f, { sc: 0, stam: 100, inv: 2, kick: 0, rollT: 0, trailLen: 0, sh: 100, w: 0, hk: 0, pg: 0, im: 0, low: 0, fl: 0, mt: 0, ok: 0 });
+}
+
+// Player two comes in, on Darwin's wing — and from there flies where they like.
 function join() {
-  crew[1] = mate;
-  Object.assign(mate, { z: lead.z, s: 8, sc: 0, stam: 100, inv: 2, trailLen: 0, kick: 0, rollT: 0, x: lead.x, y: lead.y });
-  lead.s = -8;
+  let a = lead.yaw;
+  crew[1] = team[1] = mate;
+  fresh(mate);
+  Object.assign(mate, { x: lead.x + Math.cos(a) * 10, y: lead.y + Math.sin(a) * 10, z: lead.z, yaw: a, c: { ...lead.c } });
   tell(1, '¡MONITO EN EL AIRE!\nVOLEMOS JUNTOS, DARWIN.');
 }
 
 function startGame(two) {
   gMode = PLAY;
-  gT = gScore = gLow = gWater = gHacked = gPurge = gChan = gImmune = gEmN = gFlash = gRain = 0;
-  gMult = 1;
-  gShield = 100;
+  gT = gEmN = gRain = 0;
   gSpawnT = 8; // (see the campaign, where these run down)
   gHackT = 6;
   gEmT = 28;
   drones.length = shots.length = fires.length = folk.length = 0;
   em = null;
-  crew.length = 1;
-  Object.assign(lead, { s: 0, sc: 0, stam: 100, inv: 2, kick: 0, z: groundAt(lead.x, lead.y) + 20 });
+  crew = [lead];
+  team = [lead];
+  fresh(lead);
+  lead.z = groundAt(lead.x, lead.y) + 20;
   talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
   // no briefing: the stick now, and everything else when it is first needed
@@ -1199,16 +1226,16 @@ function spawnDrone(k) {
   // circling the crew (for less time the longer the flight has lasted), and then dives at one
   // of them; a hacker takes enough killing to get its hack started
   let side = rand() < 0.5 ? -1 : 1;
-  drones.push({ k, hp: k ? 16 : 4 + Math.min(6, gEmN), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: sq.z + 8 });
+  drones.push({ f: crew[gSpawnN++ % crew.length], k, hp: k ? 16 : 4 + Math.min(6, gEmN), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: me.z + 8 });
 }
 
 // A spot of ground near the squad, mostly ahead of it, that passes the test.
 function landNear(near, far, test) {
   for (let n = 0; n < 80; n++) {
-    let a = sq.yaw + spread() * 1.4;
+    let a = me.yaw + spread() * 1.4;
     let d = near + rand() * (far - near);
-    let x = sq.x + Math.sin(a) * d;
-    let y = sq.y - Math.cos(a) * d;
+    let x = me.x + Math.sin(a) * d;
+    let y = me.y - Math.cos(a) * d;
     if (x > 4 && x < N - 4 && test(x, y)) return [x, y];
   }
   return null;
@@ -1231,9 +1258,9 @@ let dry = () => Math.min(1, gT / 300);
 function findWater() {
   for (let r = 6; r < 500; r += 6) {
     for (let a = 0; a < 3.2; a += 6 / r) {
-      for (let t of [sq.yaw + a, sq.yaw - a]) {
-        let x = sq.x + Math.sin(t) * r;
-        let y = sq.y - Math.cos(t) * r;
+      for (let t of [me.yaw + a, me.yaw - a]) {
+        let x = me.x + Math.sin(t) * r;
+        let y = me.y - Math.cos(t) * r;
         if (x > 4 && x < N - 4 && GR[cell(x, y)] <= G_SHALLOW * GS) return { x, y, z: groundAt(x, y) };
       }
     }
@@ -1266,12 +1293,12 @@ function startFlood() {
   let bd = 1e9;
   let by = 0;
   for (let q of QUEB) {
-    let dy = ((((q >> NS) - sq.y) % N) + N * 1.5) % N - N / 2; // the short way round, north or south
-    let d = Math.abs(Math.hypot((q & NM) - sq.x, dy) - 190);
+    let dy = W((q >> NS) - me.y); // the short way round, north or south
+    let d = Math.abs(Math.hypot((q & NM) - me.x, dy) - 190);
     if (d < bd) {
       bd = d;
       best = q;
-      by = sq.y + dy;
+      by = me.y + dy;
     }
   }
   if (best < 0) return false;
@@ -1318,7 +1345,7 @@ function douse(x, y, z, by) {
   for (let i = 0; i < 10; i++) puff(x, y, z + 0.5, spread() * 8, spread() * 8, 4 + rand() * 8, 0.6, 3, 1.2);
   let out = 0;
   for (let i = fires.length - 1; i >= 0; i--) {
-    if (Math.hypot(fires[i].x - x, fires[i].y - y) < 9) {
+    if (Math.hypot(fires[i].x - x, W(fires[i].y - y)) < 9) {
       fires.splice(i, 1);
       out++;
     }
@@ -1337,12 +1364,7 @@ function simulate(dt) {
   windX = (windX + dt * 2) % N;
   windY = (windY + dt * 0.8) % N;
   gT += dt;
-  gImmune -= dt;
-  gMsgT -= dt;
-  gShake *= Math.exp(-5 * dt);
-  gFlash *= Math.exp(-4 * dt);
   gRain += ((em && em.k ? 1 : 0) - gRain) * (1 - Math.exp(-0.8 * dt));
-  gWet = gRain * clamp((CA + 3 - sq.z) / 6, 0, 1);
   let play = gMode === PLAY;
   if (talk[1]) {
     // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
@@ -1358,22 +1380,25 @@ function simulate(dt) {
       talkT = 0;
     }
   }
-  if (play && gShield < 30 && ((now * 1.6) | 0) !== (((now - dt) * 1.6) | 0)) tone(880, 880, 0.08, 'square', 0.04); // little shield left
-  if (play && gShield < 35) tell(1, 'ESCUDO BAJO. LOS RESCATES Y LOS\nINCENDIOS APAGADOS LO RECUPERAN.', 128);
-  if (play && !crew[1] && pressed.START2) join();
+  if (play && !team[1] && pressed.START2) join();
   let duo = crew.length > 1;
   let n = crew.length;
-  let sx = Math.sin(sq.yaw); // the way the squad is heading …
-  let sy = -Math.cos(sq.yaw);
-  let rx = -sy; // … and its right
 
-  // ── each of the crew at their stick. Alone, the stick turns the squad. With two, each
-  // slides to the side on their own stick, and the squad turns the way they lean together.
-  // Hacked, the sticks are reversed and the guns are dead until the crew shake it off, by
-  // thrashing the sticks about and hammering their fire buttons.
-  let turns = 0;
-  let pushes = 0;
+  // ── each of the crew flies their own flight: their own stick, shield, water and score,
+  // and their own trouble. Hacked, their stick is reversed and their guns are dead until
+  // they shake it off, by thrashing the stick about and hammering their fire button.
   for (let f of crew) {
+    me = f;
+    let sx = Math.sin(f.yaw); // the way it is heading …
+    let sy = -Math.cos(f.yaw);
+    let rx = -sy; // … and its right
+    f.im -= dt;
+    f.mt -= dt;
+    f.ch = 0;
+    f.shk *= Math.exp(-5 * dt);
+    f.fl *= Math.exp(-4 * dt);
+    if (play && f.sh < 30 && ((now * 1.6) | 0) !== (((now - dt) * 1.6) | 0)) tone(880, 880, 0.08, 'square', 0.04); // little shield left
+    if (play && f.sh < 35) tell(1, 'ESCUDO BAJO. LOS RESCATES Y LOS\nINCENDIOS APAGADOS LO RECUPERAN.', 128);
     let k = f.key;
     let rawX = (held[k + 'R'] ? 1 : 0) - (held[k + 'L'] ? 1 : 0);
     let rawY = (held[k + 'U'] ? 1 : 0) - (held[k + 'D'] ? 1 : 0);
@@ -1383,20 +1408,20 @@ function simulate(dt) {
     if (!play) {
       // out of play it flies itself: wandering, or on the title making for the next thing to do
       let g = fires[0] || folk[0];
-      turn = g ? clamp(wrapAngle(Math.atan2(g.x - f.x, f.y - g.y) - sq.yaw) * 2, -1, 1) : Math.sin(now * 0.23) * 0.45;
+      turn = g ? clamp(wrapAngle(Math.atan2(g.x - f.x, f.y - g.y) - me.yaw) * 2, -1, 1) : Math.sin(now * 0.23) * 0.45;
       lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + (g ? 8 : 16) - f.z) / 6, -1, 1);
-    } else if (gHacked) {
+    } else if (f.hk) {
       turn = -turn;
       lift = -lift;
       if (rawX && rawX !== f.dx) {
         f.dx = rawX;
-        gPurge += 0.1;
+        f.pg += 0.1;
       }
       if (rawY && rawY !== f.dy) {
         f.dy = rawY;
-        gPurge += 0.1;
+        f.pg += 0.1;
       }
-      if (pressed[k + '1']) gPurge += 0.07;
+      if (pressed[k + '1']) f.pg += 0.07;
     }
     f.turn += (turn - f.turn) * (1 - Math.exp(-6 * dt));
     // a tap of the stick is a fine correction; held over, the turn tightens until the flyer
@@ -1431,7 +1456,6 @@ function simulate(dt) {
     f.pitch = Math.atan2(f.lift * CLIMB_RATE, SPEED);
     f.kick *= Math.exp(-4 * dt);
     f.z = Math.min(CEILING, f.z + (f.lift * CLIMB_RATE * fast * (f.lift < 0 && f.agl < 4 ? Math.max(0.35, (f.agl - 1) / 3) : 1) + f.kick) * dt);
-    if (duo) f.s += f.turn * 26 * dt;
 
     // barrel rolls: one full turn about the nose, left or right, sliding it that way. While
     // it rolls, shots glance off it and a hacker's signal cannot hold it.
@@ -1446,55 +1470,40 @@ function simulate(dt) {
       f.roll = f.rollDir * TAU * ease(1 - f.rollT);
       // the slide is quickest half-way through the roll
       let slide = (f.rollDir * ROLL_SLIDE * (Math.cos(Math.PI * f.rollT) - Math.cos(Math.PI * was))) / 2;
-      if (duo) f.s += slide;
-      else {
-        sq.x += rx * slide;
-        sq.y += sx * slide;
-      }
+      f.x += rx * slide;
+      f.y += sx * slide;
     } else f.roll = 0;
-    if (!rawX) f.s += ((f.id ? 8 : -8) - f.s) * dt * 1.2; // hands off, it drifts back to its own side
-    f.s = duo ? clamp(f.s, f.id ? lead.s + 10 : -15, f.id ? 15 : 5) : 0; // on screen, and never through its partner
-    turns += (f.turn * (1 + f.hard * 1.3)) / n;
-    pushes += push / n;
-  }
-  if (gHacked) {
-    gPurge = Math.max(0, gPurge - dt * 0.15);
-    gWhy = 'HACK';
-    damage(dt * 2.5);
-    if (((now * 3) | 0) !== (((now - dt) * 3) | 0)) tone(520, 260, 0.25, 'square', 0.07); // the alarm
-    if (gPurge >= 1) {
-      gHacked = 0;
-      gImmune = 9;
-      gFlash = 1;
-      gHit = 0;
-      tone(200, 1600, 0.45, 'square', 0.07);
-      for (let d of drones) if (d.k) d.hp = 0;
-      gain(400, '¡HACKER EXPULSADO!');
+    if (f.hk) {
+      f.pg = Math.max(0, f.pg - dt * 0.15);
+      f.why = 'HACK';
+      damage(dt * 2.5, f);
+      if (((now * 3) | 0) !== (((now - dt) * 3) | 0)) tone(520, 260, 0.25, 'square', 0.07); // the alarm
+      if (f.pg >= 1) {
+        f.hk = f.hit = 0;
+        f.im = 9;
+        f.fl = 1;
+        tone(200, 1600, 0.45, 'square', 0.07);
+        for (let d of drones) {
+          if (d.k && d.f === f) {
+            d.hp = 0;
+            d.by = f;
+          }
+        }
+        gain(400, '¡HACKER EXPULSADO!', f);
+      }
     }
-  }
 
-  // ── the squad flies on
-  let spd = SPEED * (1 + (BOOST - 1) * pushes);
-  sq.yaw += turns * TURN_RATE * (duo ? 0.8 : 1) * dt;
-  // the map has edges: far out to sea, or on the snowfield beyond the cordillera, the squad is turned back
-  let out = sq.x < 40 ? 1 : sq.x > N - 70 ? -1 : 0;
-  if (play && out) {
-    sq.yaw += wrapAngle(out * 1.57 - sq.yaw) * dt * 2;
-    say('FUERA DE ZONA: DE VUELTA AL VALLE', 0.5);
-  }
-  sq.x += sx * spd * dt;
-  sq.y += sy * spd * dt;
-
-  // ── each of the crew in the world: the ground, their guns, the things they can hit
-  let mid = sq.z; // where the crew were, on average: two cannot drift far apart in height
-  let top = 0;
-  sq.z = 0;
-  gAgl = 1e9;
-  for (let f of crew) {
-    f.x = sq.x + rx * f.s;
-    f.y = sq.y + sx * f.s;
-    f.yaw = sq.yaw + (duo ? f.turn * 0.3 : 0); // with two, the nose swings with the stick, to aim
-    if (duo) f.z = clamp(f.z, mid - 14, mid + 14);
+    // ── it flies on
+    let spd = SPEED * fast;
+    f.yaw += f.turn * (1 + f.hard * 1.3) * TURN_RATE * dt;
+    // the map has edges: far out to sea, or on the snowfield beyond the cordillera, it is turned back
+    let out = f.x < 40 ? 1 : f.x > N - 70 ? -1 : 0;
+    if (play && out) {
+      f.yaw += wrapAngle(out * 1.57 - f.yaw) * dt * 2;
+      say('FUERA DE ZONA: DE VUELTA AL VALLE', 0.5, f);
+    }
+    f.x += sx * spd * dt;
+    f.y += sy * spd * dt;
 
     // the ground and the water are solid, but a touch is forgiven: the flyer scrapes along
     // for a moment, bounced up a little, throwing dust or spray. Only if it is still down
@@ -1511,18 +1520,20 @@ function simulate(dt) {
       if (!f.graze) {
         f.graze = 1.3;
         f.kick = 12;
-        say('¡ROZASTE! SUBE', 0.9);
+        say('¡ROZASTE! SUBE', 0.9, f);
         tone(700, 500, 0.12, 'square', 0.06);
       } else if (f.graze < 0.85) {
         f.kick = 34;
-        gLow = 0;
+        f.low = 0;
         hurt(f, 20, '¡CHOQUE!');
       }
     }
     f.agl = f.z - ground;
-    gAgl = Math.min(gAgl, f.agl);
-    top = Math.max(top, f.agl);
-    sq.z += f.z / n;
+    // flying low multiplies every reward
+    if (play) {
+      f.low = f.agl < 8 ? Math.min(10, f.low + dt) : Math.max(0, f.low - dt * 4);
+      f.mul = 1 + ((f.low / 2.5) | 0);
+    }
 
     // the wings bend up a little in a climb
     f.flex += (0.02 + f.lift * 0.05 - f.flex) * (1 - Math.exp(-10 * dt));
@@ -1536,7 +1547,7 @@ function simulate(dt) {
     let best = 0.035;
     let aim = (t) => {
       let dx = t.x - f.x;
-      let dy = t.y - f.y;
+      let dy = W(t.y - f.y);
       let dz = t.z - f.z;
       let d = Math.hypot(dx, dy, dz);
       let off = 1 - (dx * nx + dy * ny + dz * nz) / d;
@@ -1547,7 +1558,7 @@ function simulate(dt) {
     };
     drones.forEach(aim);
     f.fireCd -= dt;
-    if (play && held[f.key + '1'] && !gHacked && f.fireCd <= 0) {
+    if (play && held[f.key + '1'] && !f.hk && f.fireCd <= 0) {
       f.fireCd = 0.07;
       // a zap that drops fast, from one of two notes in turn (each flyer has its own pair), on a click
       tone(((f.alt ^= 1) ? 2000 : 1500) - f.id * 420, 150, 0.09, 'sawtooth', 0.032);
@@ -1558,22 +1569,28 @@ function simulate(dt) {
     if (play) {
       // water: each flyer hangs a bucket on a line, as helicopters do. Dip it in the sea or a
       // river to fill it, B5 to let a load go
-      if (gWater < 3 && [0, 4, -4].some((o) => GR[cell(f.x + sy * o, f.y - sx * o)] <= G_SHALLOW * GS || GR[cell(f.x + sx * o, f.y + sy * o)] <= G_SHALLOW * GS)) {
+      if (f.w < 3 && [0, 4, -4].some((o) => GR[cell(f.x + sy * o, f.y - sx * o)] <= G_SHALLOW * GS || GR[cell(f.x + sx * o, f.y + sy * o)] <= G_SHALLOW * GS)) {
         if (f.agl < ROPE + 2) {
-          gFill += dt;
+          f.fill += dt;
           puff(f.x - sx * 2, f.y - sy * 2, ground + 0.3, spread() * 5 - sx * 8, spread() * 5 - sy * 8, 5 + rand() * 5, 0.5, 3, 0.8);
-          if (gFill > 0.08) {
-            gFill = 0;
-            say('AGUA EN EL BALDE ' + ++gWater + '/3', 1);
+          if (f.fill > 0.08) {
+            f.fill = 0;
+            say('AGUA EN EL BALDE ' + ++f.w + '/3', 1, f);
             tone(300, 600, 0.12, 'sine', 0.1);
           }
-        } else if (fires[0] && f.agl < 40) say('BAJA MÁS: EL BALDE DEBE TOCAR EL AGUA', 0.3);
+        } else if (fires[0] && f.agl < 40) say('BAJA MÁS: EL BALDE DEBE TOCAR EL AGUA', 0.3, f);
       }
-      if (pressed[f.key + '5'] && gWater > 0) {
-        gWater--;
+      if (pressed[f.key + '5'] && f.w > 0) {
+        f.w--;
         burst(0.3, 0.08, 0, 1.5);
         shots.push({ k: 2, x: f.x, y: f.y, z: f.z - ROPE, vx: sx * spd, vy: sy * spd, vz: -4, t: 8, by: f });
       }
+    }
+    // with a fire burning and their bucket dry, they are shown the way to the nearest water
+    if (!play || !fires[0] || f.w) f.wet = null;
+    else if (now > f.wt) {
+      f.wt = now + 0.4;
+      f.wet = findWater();
     }
 
     // wingtip trails and exhaust
@@ -1599,15 +1616,22 @@ function simulate(dt) {
         puff(TIP[0], TIP[1], TIP[2], -nx * 9 + spread() * 1.5, -ny * 9 + spread() * 1.5, 1 + rand() * 1.5, 0.9 + rand() * 0.6, 0, 0.5);
       }
     }
+
+    // ── its camera: behind it and a little above, swinging round after it in a turn and
+    // trailing it for a moment when it slides sideways
+    let c = f.c;
+    c.S = (CHASE_WIDTH * BW) / (MW * MODEL_SCALE) / (duo ? 1.25 : 1); // with two, it stands further off
+    c.q = 1 / (CHASE_DIST * (1 + 0.16 * push) * ML * MODEL_SCALE); // it drops back as the flyer surges ahead
+    c.k = Math.tan((CHASE_ELEV * Math.PI) / 180);
+    c.cy = BH * CHASE_Y + spread() * f.shk * 6;
+    c.yaw += wrapAngle(f.yaw - c.yaw) * (1 - Math.exp(-CHASE_FOLLOW * dt));
+    let cx = Math.cos(c.yaw);
+    let cy = Math.sin(c.yaw);
+    let aside = ((f.x - c.x) * cx + (f.y - c.y) * cy) * Math.exp(-CHASE_SLIDE * dt);
+    c.x = f.x - cx * aside;
+    c.y = f.y - cy * aside;
+    c.zr = f.z;
   }
-  gGnd = groundAt(sq.x, sq.y);
-  // flying low — all of the crew — multiplies every reward
-  if (play) {
-    gLow = top < 8 ? Math.min(10, gLow + dt) : Math.max(0, gLow - dt * 4);
-    gMult = 1 + ((gLow / 2.5) | 0);
-  }
-  let cfx = Math.sin(cam.yaw); // the way the camera looks: enemies keep their station in front of it
-  let cfy = -Math.cos(cam.yaw);
 
   // ── the title's own show never stops: a forest fire put out with the bucket, then someone
   // lifted off a river bank, and round again (a thing not reached in a while is dropped)
@@ -1616,7 +1640,7 @@ function simulate(dt) {
     demoT += dt;
     if (!g || demoT > 16) {
       fires.length = folk.length = demoT = 0;
-      gWater = 3;
+      lead.w = 3;
       let at = landNear(70, 120, demo ? (x, y) => x > 170 && GR[cell(x, y)] <= G_SHALLOW * GS : WOOD); // (a river, not the sea)
       if (at) {
         if (demo) {
@@ -1639,7 +1663,7 @@ function simulate(dt) {
     let s = shots[i];
     if (s.to && s.to.hp > 0) {
       let dx = s.to.x - s.x;
-      let dy = s.to.y - s.y;
+      let dy = W(s.to.y - s.y);
       let dz = s.to.z - s.z;
       let d = SHOT / Math.hypot(dx, dy, dz);
       s.vx = dx * d;
@@ -1654,7 +1678,7 @@ function simulate(dt) {
     let dead = s.t <= 0;
     let gz = groundAt(s.x, s.y);
     let hit = (d) => {
-      if (dead || Math.hypot(d.x - s.x, d.y - s.y, d.z - s.z) > (d.r || 1.4) + 1) return;
+      if (dead || Math.hypot(d.x - s.x, W(d.y - s.y), d.z - s.z) > (d.r || 1.4) + 1) return;
       dead = true;
       puff(s.x, s.y, s.z, 0, 0, 0, 0.14, 2, 1.3);
       d.hp--;
@@ -1669,16 +1693,16 @@ function simulate(dt) {
   }
   // ── drones circle the squad and then dive at it; hackers keep a station ahead, and
   // need a few seconds of clear signal to break in, and a roll cuts the signal
-  let rolling = crew.some((f) => f.rollT > 0);
-  gChan = 0;
   for (let i = drones.length - 1; i >= 0; i--) {
     let d = drones[i];
+    let t = crew.includes(d.f) ? d.f : (d.f = crew[0]); // whoever it is after (their partner, if they are gone)
     if (d.hp <= 0) {
       boom(d.x, d.y, d.z, 30);
       if (play) {
-        gShake = 0.4;
-        pop = { x: d.x, y: d.y, z: d.z, t: now + 1, s: '+' + (d.k ? 300 : 100) * gMult };
-        gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO', d.by);
+        let by = d.by || t;
+        by.shk = 0.4;
+        pop = { x: d.x, y: d.y, z: d.z, t: now + 1, s: '+' + (d.k ? 300 : 100) * by.mul };
+        gain(d.k ? 300 : 100, d.k ? 'HACKER DERRIBADO' : 'DRON DERRIBADO', by);
         tell(0, 'BOTÓN 4 DA IMPULSO. VOLAR BAJO\nMULTIPLICA LOS PUNTOS.', 4);
       }
       drones.splice(i, 1);
@@ -1691,22 +1715,19 @@ function simulate(dt) {
       d.nt = now + 1.5 + rand() * 2.5;
     }
     if (!d.k) {
-      // its orbit: an oval out ahead of the crew, where it never comes between them and the camera
+      // its orbit: an oval out ahead of them, where it never comes between them and their camera
       d.o += d.w * dt;
       d.ta = 48 + 20 * Math.cos(d.o);
       d.ts = 34 * Math.sin(d.o);
     }
-    let kz = d.kz; // whoever it is diving at
+    let kz = d.kz && t; // diving at them
     if (kz) {
       // a straight run at them. Shot down, it is gone; a roll throws it wide; else it hits
-      let da = -d.a;
-      let ds = kz.s - d.s;
-      let du = kz.z - sq.z - d.u;
-      let l = Math.hypot(da, ds, du);
-      let k = Math.min(1, (95 * dt) / l);
-      d.a += da * k;
-      d.s += ds * k;
-      d.u += du * k;
+      let l = Math.hypot(d.a, d.s, d.u);
+      let k = 1 - Math.min(1, (95 * dt) / l);
+      d.a *= k;
+      d.s *= k;
+      d.u *= k;
       if (l < 2.6) {
         boom(d.x, d.y, d.z, 30);
         if (kz.rollT > 0) gain(150, '¡ESQUIVADO!', kz);
@@ -1720,26 +1741,27 @@ function simulate(dt) {
       d.s += (d.ts - d.s) * e;
       d.u += (d.tu - d.u) * e;
     }
-    d.x = sq.x + cfx * d.a - cfy * d.s;
-    d.y = sq.y + cfy * d.a + cfx * d.s;
-    // over the ground, and over whatever stands between it and the crew — easing up and
-    // down, never jumping
-    d.z += (Math.max(sq.z + d.u, groundAt(d.x, d.y) + 4, groundAt((d.x + sq.x) / 2, (d.y + sq.y) / 2) + 2) - d.z) * Math.min(1, dt * 5);
+    let cfx = Math.sin(t.c.yaw); // the way their camera looks: it keeps its station in front of it
+    let cfy = -Math.cos(t.c.yaw);
+    d.x = t.x + cfx * d.a - cfy * d.s;
+    d.y = t.y + cfy * d.a + cfx * d.s;
+    // over the ground, and over whatever stands between it and them — easing up and down,
+    // never jumping
+    d.z += (Math.max(t.z + d.u, groundAt(d.x, d.y) + 4, groundAt((d.x + t.x) / 2, (d.y + t.y) / 2) + 2) - d.z) * Math.min(1, dt * 5);
     if (!play) continue;
     if (!d.k) {
       d.cd -= dt;
       if (d.cd < 0 && !kz) {
-        d.kz = crew[(rand() * n) | 0];
+        d.kz = 1;
         tone(300, 1100, 0.5, 'sawtooth', 0.07); // it winds up
       }
-    } else if (!gHacked && gImmune <= 0 && d.a < 70) {
-      d.ch = rolling ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
-      gChan = Math.max(gChan, d.ch);
+    } else if (!t.hk && t.im <= 0 && d.a < 70) {
+      d.ch = t.rollT > 0 ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
+      t.ch = Math.max(t.ch, d.ch);
       if (d.ch >= 1) {
         d.ch = 0;
-        gHacked = 1;
-        gPurge = 0;
-        gLow = 0;
+        t.hk = 1;
+        t.pg = t.low = 0;
         tell(0, '¡NOS HACKEARON! AGITA LA PALANCA\nY MACHACA B1 PARA SACARLO.', 64);
       }
     }
@@ -1769,18 +1791,12 @@ function simulate(dt) {
       }
     }
 
-    // with a fire burning and the buckets dry, the crew is shown the way to the nearest water
-    if (!fires[0] || gWater) wet = null;
-    else if (now > wetT) {
-      wetT = now + 0.4;
-      wet = findWater();
-    }
-
     // ── emergencies, one at a time: a wildfire, then a mudslide, and round again
     if (!em) {
       gEmT -= tick;
       if (gEmT < 0) {
         // (one that finds no place to begin is tried again, not passed over)
+        me = crew[(gEmN >> 1) % n]; // near one of them, then the other
         if (gEmN & 1 ? startFlood() : startFire()) gEmN++;
         else gEmT = 2;
       }
@@ -1798,7 +1814,6 @@ function simulate(dt) {
           if (fires.length > 11) {
             say('INCENDIO FUERA DE CONTROL', 2.5);
             damage(15);
-            gLow = 0;
             endEmergency();
           }
         }
@@ -1825,8 +1840,10 @@ function simulate(dt) {
           }
         }
         if (rand() < dt * 0.3) {
-          gFlash = 0.6; // lightning, and its thunder a moment after
-          gHit = 0;
+          for (let f of crew) {
+            f.fl = 0.6; // lightning, and its thunder a moment after
+            f.hit = 0;
+          }
           burst(1.6, 0.3, 0.4, 0.1);
         }
         let o = (em.at | 0) * 2;
@@ -1836,12 +1853,12 @@ function simulate(dt) {
         if (rand() < dt * 14) puff(em.x + spread() * 3, em.y + spread() * 3, em.z + 1, spread() * 3, spread() * 3, 2 + rand() * 3, 1.2, 4, 1.6);
         for (let i = folk.length - 1; i >= 0; i--) {
           let f = folk[i];
-          let by = crew.find((c) => Math.hypot(c.x - f.x, c.y - f.y) < 5 && c.z - f.z < 7);
+          let by = crew.find((c) => Math.hypot(c.x - f.x, W(c.y - f.y)) < 5 && c.z - f.z < 7);
           if (by) {
             folk.splice(i, 1);
             em.saved++;
             gain(800, '¡RESCATADO!', by);
-            heal(10);
+            heal(10, by);
             puff(f.x, f.y, f.z + 1, 0, 0, 6, 0.4, 2, 2);
           } else if (em.at >= f.i) {
             folk.splice(i, 1);
@@ -1859,7 +1876,7 @@ function simulate(dt) {
 
   // ── fires burn: flames and black smoke
   for (let f of fires) {
-    if (Math.abs(f.x - sq.x) + Math.abs(f.y - sq.y) > 260) continue;
+    if (crew.every((c) => Math.abs(f.x - c.x) + Math.abs(W(f.y - c.y)) > 260)) continue;
     if (rand() < dt * 9) puff(f.x + spread(), f.y + spread(), f.z + 0.5, spread(), spread(), 4 + rand() * 4, 0.6, 1, 1.3);
     if (rand() < dt * 2.5) puff(f.x, f.y, f.z + 3, 1.5 + spread(), 0.6 + spread(), 5 + rand() * 3, 2.2, 5, 1.8);
   }
@@ -1881,19 +1898,6 @@ function simulate(dt) {
     if (puffs[o + 8] === 3 || puffs[o + 8] > 5) puffs[o + 5] -= 30 * dt; // spray and wreckage fall back
   }
 
-  // ── the camera: behind the squad and a little above, swinging round after it in a turn
-  // and trailing it for a moment when it slides sideways
-  cam.S = (CHASE_WIDTH * BW) / (MW * MODEL_SCALE) / (duo ? 1.25 : 1); // with two, it stands further off
-  cam.q = 1 / (CHASE_DIST * (1 + 0.16 * pushes) * ML * MODEL_SCALE); // it drops back as the squad surges ahead
-  cam.k = Math.tan((CHASE_ELEV * Math.PI) / 180);
-  cam.cy = BH * CHASE_Y + spread() * gShake * 6;
-  cam.yaw += wrapAngle(sq.yaw - cam.yaw) * (1 - Math.exp(-CHASE_FOLLOW * dt));
-  let cx = Math.cos(cam.yaw);
-  let cy = Math.sin(cam.yaw);
-  let aside = ((sq.x - cam.x) * cx + (sq.y - cam.y) * cy) * Math.exp(-CHASE_SLIDE * dt);
-  cam.x = sq.x - cx * aside;
-  cam.y = sq.y - cy * aside;
-  cam.zr = sq.z;
 }
 
 // ───────────────────────────────────────────────────────────── drawing
@@ -2199,7 +2203,7 @@ let prV = 0;
 let prM = 0;
 function project(x, y, z) {
   let dx = x - cam.x;
-  let dy = y - cam.y;
+  let dy = W(y - cam.y);
   let v = dx * fwdX + dy * fwdY;
   let w = 1 + cam.q * v;
   if (w < 0.12) return false;
@@ -2519,9 +2523,9 @@ function drawThings() {
   for (let d of drones) {
     // a body with one eye that watches the condor, between two rotor pods; hackers are dark,
     // with a red eye and an aerial, and a beam on the condor while they break in
-    let dx = sq.x - d.x;
-    let dy = sq.y - d.y;
-    let dz = sq.z - d.z;
+    let dx = d.f.x - d.x;
+    let dy = d.f.y - d.y;
+    let dz = d.f.z - d.z;
     let l = (d.r * 0.8) / Math.hypot(dx, dy, dz);
     ball(d.x, d.y, d.z, d.r, d.k ? ENGINE : d.kz && (now * 12) & 1 ? GLOW : HEAD, d.kz); // diving, it flashes
     ball(d.x + dx * l, d.y + dy * l, d.z + dz * l, d.r * 0.45, d.k ? GLOW : PLUME, d.k);
@@ -2530,7 +2534,7 @@ function drawThings() {
     ball(d.x - rgtX * d.r * 1.5, d.y - rgtY * d.r * 1.5, d.z - bob, d.r * 0.5, BODY);
     if (d.k) {
       beam(d.x, d.y, d.z + d.r, d.x, d.y, d.z + d.r + 2.5, 0.3, colRed, 255);
-      if (d.ch > 0) beam(d.x, d.y, d.z, sq.x, sq.y, sq.z, 0.5, colRed, 90 + ((d.ch * 120 + Math.sin(now * 40) * 40) | 0));
+      if (d.ch > 0) beam(d.x, d.y, d.z, d.f.x, d.f.y, d.f.z, 0.5, colRed, 90 + ((d.ch * 120 + Math.sin(now * 40) * 40) | 0));
     }
   }
   for (let f of fires) {
@@ -2558,18 +2562,20 @@ function drawThings() {
   // a tall light over wherever help is needed
   let goal = folk[0] || fires[0];
   if (goal) beam(goal.x, goal.y, goal.z + 30, goal.x, goal.y, goal.z + 150, 1.2, folk[0] ? colTrail : colFire, 80);
+  let wet = me.wet;
   if (wet) beam(wet.x, wet.y, wet.z + 8, wet.x, wet.y, wet.z + 150, 1.2, WATER, 110);
-  if (gMode !== OVER && (fires[0] || gWater)) {
+  if (gMode !== OVER) {
     // the buckets, trailing a little behind
     for (let f of crew) {
+      if (!fires[0] && !f.w) continue;
       let x = f.x - Math.sin(f.yaw) * 2;
       let y = f.y + Math.cos(f.yaw) * 2;
       let z = Math.max(groundAt(x, y) + 0.9, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
       beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
       if (project(x, y, z)) {
         // a model of its own, lit like the flyers: empty, or with water in it
-        let k = f.id * 2 + (gWater > 0);
-        let bk = BUCKETS[k] || (BUCKETS[k] = { id: -1, ax: new Float32Array(9), thr: 0, flex: 0, sunX: 0, sunY: 0, m: MODELS[4 + (gWater > 0)] });
+        let k = f.id * 2 + (f.w > 0);
+        let bk = BUCKETS[k] || (BUCKETS[k] = { id: -1, ax: new Float32Array(9), thr: 0, flex: 0, sunX: 0, sunY: 0, m: MODELS[4 + (f.w > 0)] });
         bk.ax[0] = bk.ax[4] = Math.cos(f.yaw);
         bk.ax[1] = Math.sin(f.yaw);
         bk.ax[3] = -bk.ax[1];
@@ -2791,7 +2797,7 @@ function tag(str, x, y, colour) {
 // how far it is.
 function mark(x, y, z, colour, label, always) {
   let dx = x - cam.x;
-  let dy = y - cam.y;
+  let dy = W(y - cam.y);
   let v = dx * fwdX + dy * fwdY;
   let u = dx * rgtX + dy * rgtY;
   let w = 1 + cam.q * v;
@@ -2836,11 +2842,11 @@ function radar(cx, cy, R, o) {
     // a ring, dark outside and pale inside, with nothing behind it
     for (let i = 0; i < 3; i++) box(cx + Math.sin(a) * (R + 1 - i), cy + Math.cos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
   }
-  let sx = Math.sin(sq.yaw);
-  let sy = -Math.cos(sq.yaw);
+  let sx = Math.sin(o.yaw);
+  let sy = -Math.cos(o.yaw);
   let blip = (t, colour, size) => {
     let dx = t.x - o.x;
-    let dy = t.y - o.y;
+    let dy = W(t.y - o.y);
     let px = ((dy * sx - dx * sy) * R) / 170;
     let py = (-(dx * sx + dy * sy) * R) / 170;
     let d = Math.hypot(px, py) / (R - 2);
@@ -2854,7 +2860,7 @@ function radar(cx, cy, R, o) {
   for (let f of fires) blip(f, colFire, 2);
   for (let f of folk) blip(f, INK, 2);
   for (let d of drones) blip(d, colRed, d.k ? 3 : 2);
-  if (wet) blip(wet, WATER, 3);
+  if (o.wet) blip(o.wet, WATER, 3);
   // the crew, and at the middle an arrowhead, nose up, for whose radar it is; north, round the rim
   for (let f of crew) blip(f, f.id ? GOLD : INK, 3);
   for (let n = 1; n < 4; n++) box(cx - n + 0.5, cy + n - 4, n * 2 - 1, 1, o.id ? GOLD : INK);
@@ -2873,10 +2879,10 @@ function drawHud() {
       text('RESCATE ENTRE DESASTRES NATURALES', CXS, 106, INK, 2, 1);
     }
     let naming = over && gName && gPos < 3;
-    if (over) text('PUNTAJE ' + gScore, CXS, 104, GOLD, 2, 1);
+    if (over) text(team.map((f) => NAMES[f.id] + ' ' + f.sc).join(' · '), CXS, 104, GOLD, 2, 1);
     else if (blink) text('START 1: UN JUGADOR · START 2: DOS', CXS, 142, GOLD, 2, 1);
     if (naming) {
-      text('¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
+      text(NAMES[gWho.id] + ': ¡ENTRASTE AL RANKING! TUS INICIALES:', CXS, 126, INK, 1, 1);
       text([...gName].map((c, i) => (i === gPos && blink ? ' ' : c)).join(' '), CXS, 140, GOLD, 3, 1);
       key(0, CXS - 60, 180);
       text('LETRA', CXS - 50, 176, DIM);
@@ -2885,9 +2891,9 @@ function drawHud() {
     } else {
       if (over)
         text(
-          gWhy === '¡KAMIKAZE!'
+          me.why === '¡KAMIKAZE!'
             ? 'CONSEJO: DERRIBA LOS DRONES ANTES DE QUE SE LANCEN, O ESQUÍVALOS CON UN GIRO'
-            : gWhy === 'HACK'
+            : me.why === 'HACK'
               ? 'CONSEJO: SI TE HACKEAN, AGITA LA PALANCA Y MACHACA EL BOTÓN 1'
               : 'CONSEJO: TIRA LA PALANCA HACIA ATRÁS PARA SUBIR',
           CXS,
@@ -2903,19 +2909,15 @@ function drawHud() {
     }
     face(0, 34, BH - 28, 2.5);
     face(1, BW - 34, BH - 28, 2.5, 1);
-    text('DARWIN', 66, BH - 52, GOLD);
-    text('MONITO', BW - 66, BH - 52, GOLD, 1, 2);
+    text(NAMES[0], 66, BH - 52, GOLD);
+    text(NAMES[1], BW - 66, BH - 52, GOLD, 1, 2);
     panel(BH - 60);
     if (over && !naming && blink) text('START PARA VOLAR DE NUEVO', CXS, BH - 72, GOLD, 1, 1);
     return;
   }
 
   let goal = folk[0] || fires[0];
-  let duty = folk[0]
-    ? [(em.at ? 'ALUVIÓN' : 'TORMENTA') + ` · ${folk.length} POR RESCATAR`, 'PASA BAJITO SOBRE CADA BALIZA']
-    : goal
-      ? [`INCENDIO · ${fires.length} FOCOS`, gWater ? 'SUELTA EL AGUA ENCIMA CON B5' : 'MOJA EL BALDE EN EL MAR O UN RÍO']
-      : ['PATRULLA', 'DERRIBA DRONES · VUELA BAJO'];
+  let duty;
   let weather = `CALOR ${(30 + dry() * 12) | 0} · HUMEDAD ${(30 - dry() * 20) | 0} · VIENTO ${(20 + dry() * 50) | 0}`;
   // With two aboard the picture is split — a view each, one above the other — and each has
   // the same instruments beside their own view, on a card of their own down the right: D is
@@ -2928,8 +2930,22 @@ function drawHud() {
     box(0, 149, 260, 2, OFF);
     flat = 1;
   }
-  (D ? crew : [lead]).forEach((f, i) => {
+  crew.forEach((f, i) => {
     let oy = i * 150;
+    duty = folk[0]
+      ? [(em.at ? 'ALUVIÓN' : 'TORMENTA') + ` · ${folk.length} POR RESCATAR`, 'PASA BAJITO SOBRE CADA BALIZA']
+      : goal
+        ? [`INCENDIO · ${fires.length} FOCOS`, f.w ? 'SUELTA EL AGUA ENCIMA CON B5' : 'MOJA EL BALDE EN EL MAR O UN RÍO']
+        : ['PATRULLA', 'DERRIBA DRONES · VUELA BAJO'];
+    if (f.sh < 30 && (now * 4) & 1) {
+      // little shield left: their picture's frame flashes
+      let w = D || BW;
+      let h = D ? 150 : BH;
+      box(0, oy, w, 2, colRed);
+      box(0, oy + h - 2, w, 2, colRed);
+      box(0, oy, 2, h, colRed);
+      box(w - 2, oy, 2, h, colRed);
+    }
     let ink = f.id ? GOLD : INK;
     let hx = D ? 298 : 6; // the score stands beside their face, on a card
     if (D) {
@@ -2937,13 +2953,13 @@ function drawHud() {
       face(i, 280, oy + 21, 1.1);
     }
     // the score (their own, with two), the multiplier, and how long the crew has kept low
-    text(D ? (i ? 'MONITO' : 'DARWIN') : 'PUNTAJE', hx, oy + 5, D ? colRed : DIM);
-    if (gAgl < 8 && !D) text('VUELO BAJO', 116, 5, GOLD, 1, 2);
-    text(String(D ? f.sc : gScore).padStart(6, '0'), hx, oy + 16, ink, 2);
-    text('×' + gMult, D ? 393 : 116, oy + 16, gMult > 1 ? GOLD : DIM, 2, 2);
-    if (gLow > 0.1) {
-      box(D + 5, oy + 32, (gLow / 10) * 110 + 2, 4, EDGE);
-      box(D + 6, oy + 33, (gLow / 10) * 110, 2, GOLD);
+    text(D ? NAMES[i] : 'PUNTAJE', hx, oy + 5, D ? colRed : DIM);
+    if (f.agl < 8 && !D) text('VUELO BAJO', 116, 5, GOLD, 1, 2);
+    text(String(f.sc).padStart(6, '0'), hx, oy + 16, ink, 2);
+    text('×' + f.mul, D ? 393 : 116, oy + 16, f.mul > 1 ? GOLD : DIM, 2, 2);
+    if (f.low > 0.1) {
+      box(D + 5, oy + 32, (f.low / 10) * 110 + 2, 4, EDGE);
+      box(D + 6, oy + 33, (f.low / 10) * 110, 2, GOLD);
     }
 
     // shield and water (the crew's), and their own boost
@@ -2952,12 +2968,12 @@ function drawHud() {
     let gx = lx + (D ? 50 : 40);
     let gw = D ? 78 : 66;
     text('ESCUDO', lx, gy + 5, DIM);
-    gauge(gx, gy + 7, gw, gShield / 100, gShield < 30 ? colRed : INK);
+    gauge(gx, gy + 7, gw, f.sh / 100, f.sh < 30 ? colRed : INK);
     text('IMPULSO', lx, gy + 16, DIM);
     gauge(gx, gy + 18, gw, f.stam / 100, ink);
     text('AGUA', lx, gy + 27, DIM);
     box(gx - 1, gy + 28, gw + 1, 7, EDGE);
-    for (let n = 0; n < 3; n++) box(gx + (n * gw) / 3, gy + 29, gw / 3 - 1, 5, n < gWater ? WATER : OFF);
+    for (let n = 0; n < 3; n++) box(gx + (n * gw) / 3, gy + 29, gw / 3 - 1, 5, n < f.w ? WATER : OFF);
 
     // height: the ground rising from the foot of the scale, the cloud base and the
     // stratosphere ruled across it, and the flyer
@@ -2965,7 +2981,7 @@ function drawHud() {
     let tall = D ? 26 : 34;
     let rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * tall;
     box(D + 5, foot - tall - 1, 6, tall + 2, OFF);
-    box(D + 6, rung(gGnd), 4, foot - rung(gGnd), DIM);
+    box(D + 6, rung(f.z - f.agl), 4, foot - rung(f.z - f.agl), DIM);
     box(D + 4, rung(CA), 8, 1, INK);
     box(D + 4, rung(STRATO), 8, 1, INK);
     box(D + 3, rung(f.z) - 1, 10, 2, ink);
@@ -2975,10 +2991,10 @@ function drawHud() {
     if (D) {
       // what they are saying, if it is they who speak; else the job in hand, and the news or
       // how the job is done
-      if (talk[1] && talk[0] === i) text(wrap(talk[1]).slice(0, ((talkT * 13) | 0) * 3), 266, oy + 69, INK);
+      if (talk[1] && talk[0] === i && !f.hk) text(wrap(talk[1]).slice(0, ((talkT * 13) | 0) * 3), 266, oy + 69, INK);
       else {
         text(duty[0], 266, oy + 69, GOLD);
-        text(wrap(gHacked ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : gChan > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : gMsgT > 0 ? gMsg : fires[0] ? weather : duty[1]), 266, oy + 81, gHacked || gChan > 0 ? colRed : fires[0] && gMsgT <= 0 ? colFire : INK);
+        text(wrap(f.hk ? 'HACKEADO: AGITA LA PALANCA Y MACHACA B1' : f.ch > 0 ? 'HACKEO ENTRANTE: GIRA O DISPARA' : f.mt > 0 ? f.msg : fires[0] ? weather : duty[1]), 266, oy + 81, f.hk || f.ch > 0 ? colRed : fires[0] && f.mt <= 0 ? colFire : INK);
       }
     }
   });
@@ -2991,13 +3007,6 @@ function drawHud() {
     });
   }
 
-  if (gShield < 30 && (now * 4) & 1) {
-    // little shield left: the frame flashes
-    box(0, 0, BW, 2, colRed);
-    box(0, BH - 2, BW, 2, colRed);
-    box(0, 0, 2, BH, colRed);
-    box(BW - 2, 0, 2, BH, colRed);
-  }
   if (D) return;
 
   // alone: the job in hand across the top, and how it is done; with a fire burning, the
@@ -3016,15 +3025,15 @@ function drawHud() {
     let w = Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 22;
     card(112, BH - 61, w, 56);
     face(talk[0], 82, BH - 30, 2.5);
-    text((talk[0] ? 'MONITO' : 'DARWIN') + ' · BOTÓN 6: SALTAR', 123, BH - 54, colRed, 1, 0, 1);
+    text(NAMES[talk[0]] + ' · BOTÓN 6: SALTAR', 123, BH - 54, colRed, 1, 0, 1);
     text(talk[1].slice(0, ((talkT * 13) | 0) * 3), 123, BH - 42, EDGE, 1, 0, 1);
   } else if (gT < 60) {
     // with the radio quiet, for the first minute: what the buttons do
-    if (gScore && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
+    if (me.sc && !team[1] && blink) text('START 2: SE SUMA EL MONITO', CXS, BH - 72, GOLD, 1, 1);
     panel(BH - 60);
   } else if (was) panel(BH - 98, 332);
   if (was && talk[1]) panel(BH - 98, 332);
-  if (!gScore && drones[0] && blink) {
+  if (!me.sc && drones[0] && blink) {
     key(1, CXS - 112, BH - 71);
     text('MANTÉN APRETADO Y DISPARA', CXS + 8, BH - 78, GOLD, 2, 1);
   }
@@ -3032,14 +3041,14 @@ function drawHud() {
   marks();
 
   // what is going on, across the top of the picture
-  if (gHacked) {
+  if (me.hk) {
     text('¡HACKEADO!', CXS, 48, colRed, 3, 1);
     text('AGITA LA PALANCA Y MACHACA B1', CXS, 74, INK, 1, 1);
-    gauge(CXS - 78, 88, 156, gPurge, INK);
-  } else if (gChan > 0) {
+    gauge(CXS - 78, 88, 156, me.pg, INK);
+  } else if (me.ch > 0) {
     text('HACKEO ENTRANTE: GIRA O DISPARA', CXS, 48, colRed, 2, 1);
-    gauge(CXS - 78, 66, 156, gChan, colRed);
-  } else if (gMsgT > 0) text(gMsg, CXS, 48, INK, gMsg.length > 30 ? 1 : 2, 1);
+    gauge(CXS - 78, 66, 156, me.ch, colRed);
+  } else if (me.mt > 0) text(me.msg, CXS, 48, INK, me.msg.length > 30 ? 1 : 2, 1);
 }
 
 // Marks: what cannot be seen and where to go, each with what to do.
@@ -3047,18 +3056,19 @@ function marks() {
   let goal = folk[0] || fires[0];
   for (let d of drones) mark(d.x, d.y, d.z, colRed, d.k ? 'HACKER' : d.kz ? '¡KAMIKAZE! GIRA' : 'DRON', d.kz);
   if (folk[0]) mark(goal.x, goal.y, goal.z + 4, INK, 'RESCATE: PASA BAJITO', 1);
-  else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, gWater ? 'FUEGO: SUELTA B5' : 'FUEGO', gWater);
-  if (wet) mark(wet.x, wet.y, wet.z + 3, WATER, 'AGUA: MOJA EL BALDE', 1);
+  else if (goal) mark(goal.x, goal.y, goal.z + 4, colFire, me.w ? 'FUEGO: SUELTA B5' : 'FUEGO', me.w);
+  if (me.wet) mark(me.wet.x, me.wet.y, me.wet.z + 3, WATER, 'AGUA: MOJA EL BALDE', 1);
 }
 
 // The scene as the camera stands: the land, the sky, and everything in them.
 function view(alive) {
   nSJ = 0;
+  gWet = gRain * clamp((CA + 3 - me.z) / 6, 0, 1);
   if (alive) {
     for (let f of crew) {
       let o = nSJ++ * 6;
       SJ[o] = f.x - cam.x;
-      SJ[o + 1] = f.y - cam.y;
+      SJ[o + 1] = W(f.y - cam.y);
       SJ[o + 2] = f.z;
       SJ[o + 3] = Math.cos(f.yaw);
       SJ[o + 4] = Math.sin(f.yaw);
@@ -3091,29 +3101,40 @@ function view(alive) {
       }
     }
   }
-  if (gMode === PLAY && !gHacked) crew.forEach(drawSight);
+  if (gMode === PLAY) crew.forEach((f) => f.hk || drawSight(f));
 }
 
 let KEEP = new Uint32Array(BW * BH); // the two views of a split screen, while they are put together
 function drawFrame() {
-  fwdX = Math.sin(cam.yaw);
-  fwdY = -Math.cos(cam.yaw);
-  rgtX = -fwdY;
-  rgtY = fwdX;
   invMs = 1 / MODEL_SCALE;
-  sunR = LIGHT[0] * rgtX + LIGHT[1] * rgtY;
-  sunU = LIGHT[2];
-  sunC = -(LIGHT[0] * fwdX + LIGHT[1] * fwdY);
   let alive = gMode !== OVER;
 
   for (let t of LABELS) t.setVisible(false);
   labelN = 0;
   was = lit;
   lit = 0;
+  // the scene as one of the crew sees it, from their own camera, with whatever has got into
+  // their picture: a hack, a hit, lightning
+  let shot = (f) => {
+    me = f;
+    cam = f.c;
+    fwdX = Math.sin(cam.yaw);
+    fwdY = -Math.cos(cam.yaw);
+    rgtX = -fwdY;
+    rgtY = fwdX;
+    sunR = LIGHT[0] * rgtX + LIGHT[1] * rgtY;
+    sunU = LIGHT[2];
+    sunC = -(LIGHT[0] * fwdX + LIGHT[1] * fwdY);
+    view(alive);
+    if (f.hk || f.ch > 0.4) glitch(f.hk ? 1 : f.ch * 0.5);
+    if (f.fl > 0.02) {
+      let a = (f.fl * 200) | 0;
+      for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], f.hit ? colRed : colTrail, a);
+    }
+  };
   if (gMode === PLAY && crew[1]) {
-    // two aboard: a view each, 260 by 150, cut from the middle of the picture as each one's
+    // two flying: a view each, 260 by 150, cut from the middle of the picture as each one's
     // own camera sees it and laid one above the other down the left
-    let { x, y, zr } = cam;
     VX0 = 70;
     VX1 = 330;
     VYB = VB = 240;
@@ -3121,17 +3142,11 @@ function drawFrame() {
     HW = 130;
     TX = -70;
     crew.forEach((f, i) => {
-      cam.x = x + f.x - sq.x;
-      cam.y = y + f.y - sq.y;
-      cam.zr = f.z;
       TY = i * 150 - 90;
-      view(alive);
+      shot(f);
       marks();
       for (let r = 0; r < 150; r++) KEEP.set(FB.subarray((90 + r) * BW + 70, (90 + r) * BW + 330), (i * 150 + r) * BW);
     });
-    cam.x = x;
-    cam.y = y;
-    cam.zr = zr;
     VX0 = TX = TY = 0;
     VX1 = BW;
     VYB = BH;
@@ -3139,12 +3154,7 @@ function drawFrame() {
     VB = BH - 62;
     HW = CXS;
     FB.set(KEEP);
-  } else view(alive);
-  if (gHacked || gChan > 0.4) glitch(gHacked ? 1 : gChan * 0.5);
-  if (gFlash > 0.02) {
-    let a = (gFlash * 200) | 0;
-    for (let p = 0; p < FB.length; p++) FB[p] = mix(FB[p], gHit ? colRed : colTrail, a);
-  }
+  } else shot(crew[0]);
   drawHud();
 }
 
@@ -3203,13 +3213,13 @@ function update(time, delta) {
     if (up || pressed.P1_U || pressed.P2_U) gName = gName.slice(0, gPos) + String.fromCharCode(65 + ((gName.charCodeAt(gPos) - 65 + (up ? 1 : 25)) % 26)) + gName.slice(gPos + 1);
     if ((go || gT > 20) && ++gPos > 2) {
       saveTop();
-      gT = 7; // the table stays up a while, and then it is back to the title
+      next(); // (their partner's turn, if they have a place too)
+      gT = gName ? 0 : 7; // the table stays up a while, and then it is back to the title
     }
   } else if (gMode !== PLAY && gT > 1 && go) startGame(pressed.START2);
   else if (gMode === OVER && gT > 15) {
     // left alone, the end screen gives way to the title and its show
     gMode = TITLE;
-    crew.length = 1;
     drones.length = 0;
     em = null;
     resetFlight();
