@@ -900,28 +900,33 @@ let gT = 0; // seconds in this mode
 let gWho = null; // whose initials they are
 let gName = ''; // initials being entered for the table of records, if the flight earned a place
 let gPos = 0; // which of the three is being chosen
-// The five best flights, [initials, score], best first: kept by the cabinet between visits
-// (or by the browser, away from it).
-let BEST = [];
-let KEY = '2075.top';
+// The five best flights, [initials, score], best first: one table for pilots flying alone
+// (0) and one for pairs (1), where each shares the drones and has a partner's help. Kept by
+// the cabinet between visits (or by the browser, away from it).
+let TOPS = [[], []];
+let gTab = 0; // which table: the flight's, at its end; on the title, each in turn
+let KEY = (m) => '2075.top' + (m ? 2 : '');
 function loadTop() {
-  let take = (v) => {
-    if (Array.isArray(v)) BEST = v.filter((e) => Array.isArray(e) && e[1] > 0).slice(0, 5);
-  };
-  try {
-    let safe = window.platanusArcadeStorage;
-    if (safe) safe.get(KEY).then((r) => r.found && take(r.value), () => {});
-    else take(JSON.parse(localStorage.getItem(KEY)));
-  } catch (e) {}
+  [0, 1].forEach((m) => {
+    let take = (v) => {
+      if (Array.isArray(v)) TOPS[m] = v.filter((e) => Array.isArray(e) && e[1] > 0).slice(0, 5);
+    };
+    try {
+      let safe = window.platanusArcadeStorage;
+      if (safe) safe.get(KEY(m)).then((r) => r.found && take(r.value), () => {});
+      else take(JSON.parse(localStorage.getItem(KEY(m))));
+    } catch (e) {}
+  });
 }
 function saveTop() {
-  BEST.push([gName, gWho.sc]);
+  let B = TOPS[gTab];
+  B.push([gName, gWho.sc]);
   gWho.ok = 1;
-  BEST.sort((a, b) => b[1] - a[1]).length = Math.min(5, BEST.length);
+  B.sort((a, b) => b[1] - a[1]).length = Math.min(5, B.length);
   try {
     let safe = window.platanusArcadeStorage;
-    if (safe) safe.set(KEY, BEST).catch(() => {});
-    else localStorage.setItem(KEY, JSON.stringify(BEST));
+    if (safe) safe.set(KEY(gTab), B).catch(() => {});
+    else localStorage.setItem(KEY(gTab), JSON.stringify(B));
   } catch (e) {}
 }
 let gSpawnT = 0;
@@ -1082,7 +1087,7 @@ function heal(n, who) {
   for (let f of them(who)) f.sh = Math.min(100, f.sh + n);
 }
 
-// kind: 0 exhaust · 1 flame · 2 flash · 3 water · 4 dust · 5 black smoke · 6 a solid piece of wreckage
+// kind: 0 (unused) · 1 flame · 2 flash · 3 water · 4 dust · 5 black smoke · 6 a solid piece of wreckage
 function puff(x, y, z, vx, vy, vz, life, kind, size) {
   let o = puffHead * PUFF_F;
   puffHead = (puffHead + 1) % PUFF_N;
@@ -1108,7 +1113,8 @@ function boom(x, y, z, n) {
 
 // Whose initials are wanted next: the first of the team with a place in the table.
 function next() {
-  gWho = team.find((f) => !f.ok && f.sc && (!BEST[4] || f.sc > BEST[4][1]));
+  let B = TOPS[gTab];
+  gWho = team.find((f) => !f.ok && f.sc && (!B[4] || f.sc > B[4][1]));
   gName = gWho ? 'AAA' : '';
   gPos = 0;
 }
@@ -1123,6 +1129,7 @@ function damage(d, who) {
     else {
       gMode = OVER;
       gT = 0;
+      gTab = team.length - 1; // alone, or a pair (even if the partner came in late)
       next();
     }
   }
@@ -1180,6 +1187,7 @@ function startGame(two) {
   talk.length = talkT = told = news = 0;
   tone(220, 880, 0.5, 'triangle', 0.1);
   // no briefing: the stick now, and everything else when it is first needed
+  tell(0, 'AÑO 2075. EL PLANETA SE CALENTÓ 3 GRADOS\nY LAS IA QUE LO VIGILABAN YA NO OBEDECEN.');
   tell(0, 'PALANCA: ATRÁS SUBE, ADELANTE BAJA.\nMANTENLA A UN LADO PARA VIRAR EN SECO.');
   if (two) join();
 }
@@ -1221,7 +1229,10 @@ function modelPoint(f, ma, mb, mc, out, o) {
 
 function spawnDrone(k) {
   if (k) tell(0, '¡UN DRON HACKER! DERRÍBALO O HAZ UN\nGIRO (BOTÓN 2 O 3) ANTES DE QUE ENTRE.', 2);
-  else tell(1, 'BOTÓN 1 DISPARA. LOS DRONES ORBITAN Y SE\nLANZAN: DERRÍBALOS O ESQUIVA CON 2 O 3.', 1);
+  else {
+    tell(1, 'BOTÓN 1 DISPARA. LOS DRONES ORBITAN Y SE\nLANZAN: DERRÍBALOS O ESQUIVA CON 2 O 3.', 1);
+    tell(0, 'SON DRONES DE LA RED QUE IBA A SALVARNOS.\nAHORA ATACAN TODO LO QUE VUELA.', 32);
+  }
   // they come in from one flank or the other, tougher with each emergency. A drone loiters,
   // circling the crew (for less time the longer the flight has lasted), and then dives at one
   // of them; a hacker takes enough killing to get its hack started
@@ -1282,7 +1293,7 @@ function startFire() {
   siren();
   say('¡INCENDIO FORESTAL!');
   tell(1, '¡INCENDIO! SIGUE LA FLECHA AL AGUA, MOJA EL\nBALDE Y SUÉLTALA SOBRE EL FUEGO CON B5.', 8);
-  if (dry() > 0.3) tell(0, 'ALTAS TEMPERATURAS, BAJA HUMEDAD Y VIENTO\nFUERTE: EL FUEGO AVANZA MÁS RÁPIDO.', 512);
+  tell(0, 'EL CALENTAMIENTO SECÓ ESTOS BOSQUES: CON\nCALOR Y VIENTO, EL FUEGO CORRE MÁS RÁPIDO.', 512);
   return true;
 }
 
@@ -1330,6 +1341,7 @@ function startFlood() {
   siren();
   say('¡TORMENTA!');
   tell(1, 'LLUEVE FUERTE Y EL RÍO SE VA A DESBORDAR:\nPASA BAJITO Y SACA A LA GENTE DE LA ORILLA.', 16);
+  tell(0, 'CON EL CLIMA DE AHORA, LLUEVE EN UN DÍA LO\nQUE ANTES LLOVÍA EN UN MES.', 256);
   return true;
 }
 
@@ -1610,13 +1622,6 @@ function simulate(dt) {
         f.trail[s][o + 2] = f.tip[s * 3 + 2];
       }
     }
-    if (gMode !== OVER && f.thr > 0.6 && rand() < dt * 50) {
-      for (let nz2 of NOZZLES) {
-        modelPoint(f, nz2[0], nz2[1] - 6, nz2[2], TIP, 0);
-        puff(TIP[0], TIP[1], TIP[2], -nx * 9 + spread() * 1.5, -ny * 9 + spread() * 1.5, 1 + rand() * 1.5, 0.9 + rand() * 0.6, 0, 0.5);
-      }
-    }
-
     // ── its camera: behind it and a little above, swinging round after it in a turn and
     // trailing it for a moment when it slides sideways
     let c = f.c;
@@ -2436,10 +2441,10 @@ function drawFlames(f, s) {
   }
 }
 
-// Everything soft and round that drifts: exhaust, flames, flashes, spray, dust, black smoke.
-let PUFF_COL = [pack(96, 84, 92), 0, pack(255, 255, 255), pack(110, 180, 230), pack(150, 125, 95), pack(40, 44, 54)];
+// Everything soft and round that drifts: flames, flashes, spray, dust, black smoke.
+let PUFF_COL = [0, 0, pack(255, 255, 255), pack(110, 180, 230), pack(150, 125, 95), pack(40, 44, 54)];
 let FLAMES = [pack(255, 232, 120), pack(255, 150, 44), pack(214, 60, 30)];
-let PUFF_DENSE = [110, 255, 255, 200, 150, 220];
+let PUFF_DENSE = [0, 255, 255, 200, 150, 220];
 function drawPuffs() {
   for (let o = 0; o < puffs.length; o += PUFF_F) {
     let age = puffs[o + 6];
@@ -2871,12 +2876,12 @@ function drawHud() {
   let blink = (now * 2) & 1;
   if (gMode !== PLAY) {
     let over = gMode === OVER;
-    text('INCENDIOS, ALUVIONES Y DRONES DE IA ENEMIGA ASOLAN CHILE', CXS, 8, INK, 1, 1);
+    text('CHILE, 2075: EL CALENTAMIENTO Y LA IA SE NOS FUERON DE LAS MANOS', CXS, 8, INK, 1, 1);
     text('RANITAS Y MONITOS SÚPER INTELIGENTES PILOTEAN LA DEFENSA', CXS, 21, DIM, 1, 1);
     if (over) text('FIN DEL VUELO', CXS, 62, INK, 4, 1);
     else {
       logo(44);
-      text('RESCATE ENTRE DESASTRES NATURALES', CXS, 106, INK, 2, 1);
+      text('EL FUTURO QUE TENEMOS', CXS, 106, INK, 2, 1);
     }
     let naming = over && gName && gPos < 3;
     if (over) text(team.map((f) => NAMES[f.id] + ' ' + f.sc).join(' · '), CXS, 104, GOLD, 2, 1);
@@ -2904,8 +2909,10 @@ function drawHud() {
         );
       // the table of records
       // (under the advice at the end of a flight; on the title down the left, clear of the show)
-      if (BEST[0] && !over) text('MEJORES VUELOS', 10, 168, INK);
-      BEST.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), over ? CXS : 10, (over ? 142 : 183) + i * 12, i ? DIM : GOLD, 1, over));
+      if (!over) gTab = TOPS[1][0] ? ((now / 6) | 0) & 1 : 0;
+      let B = TOPS[gTab];
+      if (B[0] && !over) text('MEJORES VUELOS · ' + (gTab + 1) + 'P', 10, 168, INK);
+      B.forEach((e, i) => text(i + 1 + '. ' + e[0] + ' ' + String(e[1]).padStart(6, '0'), over ? CXS : 10, (over ? 142 : 183) + i * 12, i ? DIM : GOLD, 1, over));
     }
     face(0, 34, BH - 28, 2.5);
     face(1, BW - 34, BH - 28, 2.5, 1);
@@ -3208,10 +3215,13 @@ function update(time, delta) {
   let go = pressed.START1 || pressed.START2 || pressed.P1_1 || pressed.P2_1;
   if (gMode === OVER && gName && gPos < 3) {
     // initials for the table: the stick changes the letter, a button takes it (and a
-    // cabinet left alone takes them as they stand)
+    // cabinet left alone for half a minute takes them as they stand; every touch of the
+    // stick or a button starts that half minute again)
     let up = pressed.P1_D || pressed.P2_D;
-    if (up || pressed.P1_U || pressed.P2_U) gName = gName.slice(0, gPos) + String.fromCharCode(65 + ((gName.charCodeAt(gPos) - 65 + (up ? 1 : 25)) % 26)) + gName.slice(gPos + 1);
-    if ((go || gT > 20) && ++gPos > 2) {
+    let turn = up || pressed.P1_U || pressed.P2_U;
+    if (turn || go) gT = 0;
+    if (turn) gName = gName.slice(0, gPos) + String.fromCharCode(65 + ((gName.charCodeAt(gPos) - 65 + (up ? 1 : 25)) % 26)) + gName.slice(gPos + 1);
+    if ((go || gT > 30) && ++gPos > 2) {
       saveTop();
       next(); // (their partner's turn, if they have a place too)
       gT = gName ? 0 : 7; // the table stays up a while, and then it is back to the title
