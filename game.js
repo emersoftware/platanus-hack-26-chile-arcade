@@ -43,6 +43,8 @@ const CABINET_KEYS = {
 // Declarations are `let` throughout, never `const`: a minifier that keeps `const` as written
 // would spend two more bytes on every one.
 (() => {
+// Math's functions under short local names, which the minifier shortens further
+let { PI: mPI, abs: mAbs, atan2: mAtan2, ceil: mCeil, cos: mCos, exp: mExp, floor: mFloor, hypot: mHypot, imul: mImul, max: mMax, min: mMin, pow: mPow, random: mRandom, round: mRound, sign: mSign, sin: mSin, sqrt: mSqrt, tan: mTan } = Math;
 // ───────────────────────────────────────────────────────────── tunables
 
 // flight
@@ -73,8 +75,8 @@ let CLOUDS = 0.45;
 
 let PX = 2; // screen pixels per buffer pixel
 let RS = 3 / PX; // sizes below were drawn for three; this scales them
-let BW = Math.ceil(GAME_WIDTH / PX);
-let BH = Math.ceil(GAME_HEIGHT / PX);
+let BW = mCeil(GAME_WIDTH / PX);
+let BH = mCeil(GAME_HEIGHT / PX);
 let CXS = BW >> 1;
 
 // The world is a strip of Chile: sea to the west, then the coastal hills, the central valley
@@ -105,16 +107,16 @@ let TAKEN = 1e8;
 
 let SUN_X = 0.42; // where a shadow falls, per unit of height (east, south)
 let SUN_Y = 0.34;
-let SUN_AZ = -Math.PI * 0.25 - 0.1; // the sun sits opposite the shadows
+let SUN_AZ = -mPI * 0.25 - 0.1; // the sun sits opposite the shadows
 let SUN_ELEV = 0.4;
 let LIGHT = norm3(-0.5, -0.45, 0.74);
 
-let TAU = Math.PI * 2;
+let TAU = mPI * 2;
 
 // ───────────────────────────────────────────────────────────── helpers
 
 function norm3(x, y, z) {
-  let l = Math.hypot(x, y, z);
+  let l = mHypot(x, y, z);
   return [x / l, y / l, z / l];
 }
 
@@ -123,10 +125,10 @@ function clamp(v, a, b) {
 }
 
 // The map goes round, north to south: a distance that way, taken the short way.
-let W = (d) => d - Math.round(d / N) * N;
+let W = (d) => d - mRound(d / N) * N;
 function wrapAngle(a) {
-  a = (a + Math.PI) % TAU;
-  return (a < 0 ? a + TAU : a) - Math.PI;
+  a = (a + mPI) % TAU;
+  return (a < 0 ? a + TAU : a) - mPI;
 }
 
 function ease(t) {
@@ -153,15 +155,15 @@ function makeRng(seed) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    let t = mImul(a ^ (a >>> 15), 1 | a);
+    t = (t + mImul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
 function hash2(x, y, s) {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ s;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  let h = mImul(x, 374761393) ^ mImul(y, 668265263) ^ s;
+  h = mImul(h ^ (h >>> 13), 1274126177);
   return (h ^ (h >>> 16)) >>> 0;
 }
 
@@ -269,10 +271,10 @@ let CLOUD_UNDER = 44; // a cloud seen from below
 let RAMP = [];
 for (let i = 0; i < NR; i++) {
   let t = (i / (NR - 1)) * (BLUES.length - 1);
-  let n = Math.min(t | 0, BLUES.length - 2);
+  let n = mMin(t | 0, BLUES.length - 2);
   let a = BLUES[n];
   let b = BLUES[n + 1];
-  RAMP.push([0, 1, 2].map((k) => Math.round(a[k] + (b[k] - a[k]) * (t - n))));
+  RAMP.push([0, 1, 2].map((k) => mRound(a[k] + (b[k] - a[k]) * (t - n))));
 }
 
 let PAL = new Uint32Array((FOG_N + 1) * NR); // [haze step][ramp step]
@@ -405,7 +407,7 @@ function buildPalettes() {
     let skin = SKINS[((m / NMAT) | 0) - 1];
     let c = (skin && skin[(m % NMAT) - 1]) || MATERIALS[m % NMAT];
     for (let l = 0; l < NLV; l++) {
-      let t = Math.min(1, l / (NLIT - 1));
+      let t = mMin(1, l / (NLIT - 1));
       let up = l < NLIT ? 0 : ((l - NLIT + 1) / (NLV - NLIT)) * 0.75; // towards white
       let r = c[0] + (c[3] - c[0]) * t;
       let g = c[1] + (c[4] - c[1]) * t;
@@ -441,7 +443,7 @@ function soften(src) {
   }
   return out;
 }
-let RIPPLE = Int8Array.from({ length: 32 }, (v, i) => Math.round(Math.sin(i * 0.196) * 2.4)); // a swell on the water
+let RIPPLE = Int8Array.from({ length: 32 }, (v, i) => mRound(mSin(i * 0.196) * 2.4)); // a swell on the water
 let GRAIN = new Float32Array(4096); // fine speckle laid over the ground close by, so it has a grain to rush past
 for (let i = 0; i < 4096; i++) GRAIN[i] = ((hash2(i & 63, i >> 6, 9) & 255) / 255 - 0.5) * 2.4;
 let CT = new Uint8Array(N * N); // cloud thickness per cell, in sixteenths
@@ -454,7 +456,7 @@ function smooth(a, b, v) {
 
 // How much light a slope catches (0.74 on the flat), from how fast it rises east and south.
 function lightOn(gx, gy) {
-  return (0.5 * gx + 0.45 * gy + 0.74) / Math.sqrt(gx * gx + gy * gy + 1);
+  return (0.5 * gx + 0.45 * gy + 0.74) / mSqrt(gx * gx + gy * gy + 1);
 }
 
 function buildWorld(seed) {
@@ -478,17 +480,17 @@ function buildWorld(seed) {
       // rivers run west from the cordillera to the sea, five to a lap of the map, each in a
       // ravine it has cut through the ranges; `cut` is how far this cell is from the nearest
       let lane = (y / N) * 5 + (n - 0.5) * 1.6 + (f - 0.5) * 0.12;
-      let cut = Math.abs(lane - Math.round(lane));
+      let cut = mAbs(lane - mRound(lane));
       let e = 0;
       let g;
       if (x < 2 || u < COAST) {
         let d = x < 2 ? 1 : (COAST - u) / COAST;
         g = d < 0.02 ? G_SURF : G_SHALLOW * (1 - smooth(0, 0.6, d)); // surf, then deeper water
       } else {
-        let ridge = 1 - Math.abs(2 * rough[i] - 1);
-        let hills = Math.exp(-(((u - 0.21) / 0.04) ** 2)) * (4 + 44 * f * (0.35 + 0.65 * ridge)); // the coastal range
+        let ridge = 1 - mAbs(2 * rough[i] - 1);
+        let hills = mExp(-(((u - 0.21) / 0.04) ** 2)) * (4 + 44 * f * (0.35 + 0.65 * ridge)); // the coastal range
         let rise = smooth(0.5, 0.8, u);
-        let peaks = rise * (26 + 100 * Math.pow(ridge, 1.5) * (0.5 + 0.5 * n) + (f - 0.5) * 12); // the cordillera
+        let peaks = rise * (26 + 100 * mPow(ridge, 1.5) * (0.5 + 0.5 * n) + (f - 0.5) * 12); // the cordillera
         let edge = smooth(0.93, 0.995, x / N); // far east: level off into a high snowfield
         e = 3 + 2 * n + hills + peaks;
         let bed = 2.5 + rise * 22; // the ground falls away into the ravine, down to the river
@@ -524,7 +526,7 @@ function buildWorld(seed) {
         g += (63 - g) * edge;
       }
       E[i] = e;
-      GR[i] = clamp(Math.round(g * GS), 0, NG - 1);
+      GR[i] = clamp(mRound(g * GS), 0, NG - 1);
       R8[i] = r & 255;
     }
   }
@@ -544,10 +546,10 @@ function buildWorld(seed) {
     let dn = ((y + 1) & NM) << NS;
     for (let x = 0; x < N; x++) {
       let i = (y << NS) | x;
-      let gx = (E[(y << NS) | Math.min(x + 1, NM)] - E[(y << NS) | Math.max(x - 1, 0)]) * 0.5;
+      let gx = (E[(y << NS) | mMin(x + 1, NM)] - E[(y << NS) | mMax(x - 1, 0)]) * 0.5;
       let gy = (E[dn | x] - E[up | x]) * 0.5;
-      H[i] = Math.round(E[i] * 2);
-      LIT[i] = clamp(Math.round(LIT_FLAT + (lightOn(gx, gy) - 0.74) * 30), 0, NL - 1) >> burnt[i]; // charred ground is dark
+      H[i] = mRound(E[i] * 2);
+      LIT[i] = clamp(mRound(LIT_FLAT + (lightOn(gx, gy) - 0.74) * 30), 0, NL - 1) >> burnt[i]; // charred ground is dark
     }
   }
 
@@ -566,7 +568,7 @@ function buildWorld(seed) {
     for (let bx = 0; bx < B; bx++) {
       let m = 0;
       for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) m = Math.max(m, top[((by + dy + B) % B) * B + clamp(bx + dx, 0, B - 1)]);
+        for (let dx = -1; dx <= 1; dx++) m = mMax(m, top[((by + dy + B) % B) * B + clamp(bx + dx, 0, B - 1)]);
       }
       HM[by * B + bx] = m;
     }
@@ -581,8 +583,8 @@ function buildWorld(seed) {
       // the noise is squeezed north–south, which draws the clouds out into long streaks
       let t = (puff[(((y * 3) & NM) << NS) | x] - thr) / (1 - thr);
       let i = (y << NS) | x;
-      E[i] = t > 0 && cover > 0 ? CK * Math.pow(t, 0.6) : 0;
-      CT[i] = Math.min(255, Math.round(E[i] * 16));
+      E[i] = t > 0 && cover > 0 ? CK * mPow(t, 0.6) : 0;
+      CT[i] = mMin(255, mRound(E[i] * 16));
     }
   }
   for (let y = 0; y < N; y++) {
@@ -592,14 +594,14 @@ function buildWorld(seed) {
       let i = (y << NS) | x;
       let gx = (E[(y << NS) | ((x + 1) & NM)] - E[(y << NS) | ((x - 1) & NM)]) * 0.5;
       let gy = (E[dn | x] - E[up | x]) * 0.5;
-      CTONE[i] = clamp(Math.round(62 + E[i] * 3 + (lightOn(gx, gy) - 0.74) * 22), CLOUD_LOW + 2, WHITE);
+      CTONE[i] = clamp(mRound(62 + E[i] * 3 + (lightOn(gx, gy) - 0.74) * 22), CLOUD_LOW + 2, WHITE);
     }
   }
   GF = soften(GR);
 }
 
 function groundAt(x, y) {
-  return H[((Math.floor(y) & NM) << NS) | clamp(Math.floor(x), 0, NM)] * 0.5;
+  return H[((mFloor(y) & NM) << NS) | clamp(mFloor(x), 0, NM)] * 0.5;
 }
 
 // ───────────────────────────────────────────────────────────── model
@@ -644,11 +646,11 @@ function inEll(x, y, z, rx, ry, rz) {
 // What flyer `who` is made of at a point: x across from the centre line, y back from the
 // nose, z up. 0 is empty air.
 function partAt(x, y, z, who) {
-  let d = Math.abs(x);
+  let d = mAbs(x);
   if (who > 3) {
     // the water bucket: a cut-off cone, mouth up — a thin wall with a pale rim, a floor, and
     // (in the second of the two) water to the brim
-    let r = Math.hypot(x, y - MPJ);
+    let r = mHypot(x, y - MPJ);
     let R = 3.2 + z * 0.42;
     return z > 9.5 || r > R ? 0 : z > 8.6 && r > R - 1.2 ? PLUME : r > R - 1.2 || z < 1.2 ? FIRE : who > 4 && z < 9.3 ? GLASS : 0;
   }
@@ -683,8 +685,8 @@ function partAt(x, y, z, who) {
   if (y > 29.5 && y < 47.5 && (d - 3) ** 2 + (z - 4.5) ** 2 < 5.2) return y > 46.4 ? GLOW : y > 43.5 ? ENGINE : BODY; // engines
   if (y > 35.5 && y < 46.5 && z > 5.5) {
     // twin fins, leaning outwards, tipped with the flyer's colour
-    let top = Math.min(11.5, 6.5 + (y - 35.5) * 0.9);
-    if (z < top && Math.abs(d - (3 + (z - 6) * 0.45)) < 0.55) return z > 8.6 && z > top - 1.6 ? HEAD : BODY;
+    let top = mMin(11.5, 6.5 + (y - 35.5) * 0.9);
+    if (z < top && mAbs(d - (3 + (z - 6) * 0.45)) < 0.55) return z > 8.6 && z > top - 1.6 ? HEAD : BODY;
   }
   if (d < 22.5) {
     // one delta wing: its leading edges run straight back from the nose to the tips, so from
@@ -693,8 +695,8 @@ function partAt(x, y, z, who) {
     let te = 41 - d * 0.1;
     if (y > le && y < te) {
       let along = (y - le) / (te - le);
-      let half = Math.max(0.5, (0.45 + 1.5 * (1 - d / 22)) * Math.sqrt(4 * along * (1 - along)));
-      if (Math.abs(z - 4.2) < half) return d > 4.5 && d < 17 && y > te - 5 && y < te - 2 ? PLUME : BODY;
+      let half = mMax(0.5, (0.45 + 1.5 * (1 - d / 22)) * mSqrt(4 * along * (1 - along)));
+      if (mAbs(z - 4.2) < half) return d > 4.5 && d < 17 && y > te - 5 && y < te - 2 ? PLUME : BODY;
     }
   }
   return 0;
@@ -716,7 +718,7 @@ function buildModel(who) {
     let x = (q & 15) - 7.5;
     let y = ((q >> 4) & 15) - 7.5;
     let z = (q >> 8) - 7.5;
-    let l = Math.hypot(x, y, z);
+    let l = mHypot(x, y, z);
     NQ[q * 3] = x / l;
     NQ[q * 3 + 1] = y / l;
     NQ[q * 3 + 2] = z / l;
@@ -758,10 +760,10 @@ function buildModel(who) {
             }
           }
         }
-        let l = Math.hypot(nx, ny, nz);
+        let l = mHypot(nx, ny, nz);
         if (l < 0.5) nz = 1;
         let s = 7.5 / (l < 0.5 ? 1 : l);
-        let q = Math.round(nx * s + 7.5) | (Math.round(ny * s + 7.5) << 4) | (Math.round(nz * s + 7.5) << 8);
+        let q = mRound(nx * s + 7.5) | (mRound(ny * s + 7.5) << 4) | (mRound(nz * s + 7.5) << 8);
         let share = full / 125;
         let x = (i + 0.5) / MK - 0.5 - MCX;
         let y = (j + 0.5) / MK - 0.5;
@@ -769,14 +771,14 @@ function buildModel(who) {
         a.push(x);
         b.push(MPJ - y);
         c.push(z - MPK);
-        w.push(y < 42 && z < 6 ? Math.max(0, Math.abs(x) - WING_ROOT) : 0);
+        w.push(y < 42 && z < 6 ? mMax(0, mAbs(x) - WING_ROOT) : 0);
         // the body is coloured like the animal: its back on what faces up, then the pale line,
         // the stripe down its sides, and its belly underneath
         let up = l < 0.5 ? 1 : nz / l;
         col.push(v - BODY ? v : up > 0.5 ? BODY : up > 0.28 ? PLUME : up > -0.3 ? SIDE : BELLY);
         ni.push(q);
-        ao.push(share > 0.5 ? 1 - Math.min(0.5, (share - 0.5) * 1.6) : 1 + Math.min(0.14, (0.5 - share) * 0.4));
-        hot.push(Math.max(0, 1 - Math.hypot(Math.abs(x) - 3, y - 47, z - 4.5) / 9)); // how close to a burner: the fire lights it
+        ao.push(share > 0.5 ? 1 - mMin(0.5, (share - 0.5) * 1.6) : 1 + mMin(0.14, (0.5 - share) * 0.4));
+        hot.push(mMax(0, 1 - mHypot(mAbs(x) - 3, y - 47, z - 4.5) / 9)); // how close to a burner: the fire lights it
         gi.push(i);
         gj.push(j);
         gk.push(k);
@@ -922,7 +924,7 @@ function saveTop() {
   let B = TOPS[gTab];
   B.push([gName, gWho.sc]);
   gWho.ok = 1;
-  B.sort((a, b) => b[1] - a[1]).length = Math.min(5, B.length);
+  B.sort((a, b) => b[1] - a[1]).length = mMin(5, B.length);
   try {
     let safe = window.platanusArcadeStorage;
     if (safe) safe.set(KEY(gTab), B).catch(() => {});
@@ -995,7 +997,7 @@ function burst(secs, vol, wait, rate) {
   let g = AC.createGain();
   let t = AC.currentTime + (wait || 0);
   s.buffer = NOISE;
-  s.playbackRate.value = rate || 0.4 + Math.random() * 0.3;
+  s.playbackRate.value = rate || 0.4 + mRandom() * 0.3;
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + secs);
   s.connect(g).connect(OUT);
@@ -1015,7 +1017,7 @@ function sound() {
     OUT.connect(AC.destination);
     NOISE = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
     let d = NOISE.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    for (let i = 0; i < d.length; i++) d[i] = mRandom() * 2 - 1;
     // the engines: a low rasp through a filter that opens with the throttle
     ENGINE_TONE = AC.createOscillator();
     ENGINE_OPEN = AC.createBiquadFilter();
@@ -1057,11 +1059,11 @@ function sound() {
   }
 }
 
-let rand = Math.random;
+let rand = mRandom;
 let spread = () => rand() * 2 - 1;
 
 function cell(x, y) {
-  return ((Math.floor(y) & NM) << NS) | clamp(Math.floor(x), 0, NM);
+  return ((mFloor(y) & NM) << NS) | clamp(mFloor(x), 0, NM);
 }
 
 // One of the crew, or all of them.
@@ -1084,7 +1086,7 @@ function gain(points, text, who) {
 }
 
 function heal(n, who) {
-  for (let f of them(who)) f.sh = Math.min(100, f.sh + n);
+  for (let f of them(who)) f.sh = mMin(100, f.sh + n);
 }
 
 // kind: 0 (unused) · 1 flame · 2 flash · 3 water · 4 dust · 5 black smoke · 6 a solid piece of wreckage
@@ -1168,7 +1170,7 @@ function join() {
   let a = lead.yaw;
   crew[1] = team[1] = mate;
   fresh(mate);
-  Object.assign(mate, { x: lead.x + Math.cos(a) * 10, y: lead.y + Math.sin(a) * 10, z: lead.z, yaw: a, c: { ...lead.c } });
+  Object.assign(mate, { x: lead.x + mCos(a) * 10, y: lead.y + mSin(a) * 10, z: lead.z, yaw: a, c: { ...lead.c } });
   tell(1, '¡MONITO EN EL AIRE!\nVOLEMOS JUNTOS, DARWIN.');
 }
 
@@ -1195,13 +1197,13 @@ function startGame(two) {
 // ───────────────────────────────────────────────────────────── simulation
 
 function axesOf(f) {
-  let cy = Math.cos(f.yaw);
-  let sy = Math.sin(f.yaw);
-  let cp = Math.cos(f.pitch);
-  let sp = Math.sin(f.pitch);
+  let cy = mCos(f.yaw);
+  let sy = mSin(f.yaw);
+  let cp = mCos(f.pitch);
+  let sp = mSin(f.pitch);
   let r = f.bank + f.roll;
-  let cr = Math.cos(r);
-  let sr = Math.sin(r);
+  let cr = mCos(r);
+  let sr = mSin(r);
   // level flight: wing = (cy, sy, 0), nose = (sy, −cy, 0), up = (0, 0, 1)
   let ux = -sy * sp; // up, after pitching
   let uy = cy * sp;
@@ -1237,7 +1239,7 @@ function spawnDrone(k) {
   // circling the crew (for less time the longer the flight has lasted), and then dives at one
   // of them; a hacker takes enough killing to get its hack started
   let side = rand() < 0.5 ? -1 : 1;
-  drones.push({ f: crew[gSpawnN++ % crew.length], k, hp: k ? 16 : 4 + Math.min(6, gEmN), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: Math.max(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: me.z + 8 });
+  drones.push({ f: crew[gSpawnN++ % crew.length], k, hp: k ? 16 : 4 + mMin(6, gEmN), r: k ? 1.9 : 1.5, a: 40 + rand() * 40, s: side * 110, o: side * 1.3, w: side * 0.7, u: 8, ta: 50, ts: 0, tu: 4, nt: 0, cd: mMax(4, 9 - gT / 40) + rand() * 2, ch: 0, x: 0, y: 0, z: me.z + 8 });
 }
 
 // A spot of ground near the squad, mostly ahead of it, that passes the test.
@@ -1245,8 +1247,8 @@ function landNear(near, far, test) {
   for (let n = 0; n < 80; n++) {
     let a = me.yaw + spread() * 1.4;
     let d = near + rand() * (far - near);
-    let x = me.x + Math.sin(a) * d;
-    let y = me.y - Math.cos(a) * d;
+    let x = me.x + mSin(a) * d;
+    let y = me.y - mCos(a) * d;
     if (x > 4 && x < N - 4 && test(x, y)) return [x, y];
   }
   return null;
@@ -1261,7 +1263,7 @@ function light(x, y) {
 }
 
 // Fire weather, worse as the flight goes on: 0 a mild day, 1 the worst — heat, dry air and wind.
-let dry = () => Math.min(1, gT / 300);
+let dry = () => mMin(1, gT / 300);
 // A wildfire: a few fires in a forest, which spread through it until they are put out with
 // water from the sea or a river.
 // The sea or river nearest the crew: rings of places, further and further out, each looked
@@ -1270,8 +1272,8 @@ function findWater() {
   for (let r = 6; r < 500; r += 6) {
     for (let a = 0; a < 3.2; a += 6 / r) {
       for (let t of [me.yaw + a, me.yaw - a]) {
-        let x = me.x + Math.sin(t) * r;
-        let y = me.y - Math.cos(t) * r;
+        let x = me.x + mSin(t) * r;
+        let y = me.y - mCos(t) * r;
         if (x > 4 && x < N - 4 && GR[cell(x, y)] <= G_SHALLOW * GS) return { x, y, z: groundAt(x, y) };
       }
     }
@@ -1305,7 +1307,7 @@ function startFlood() {
   let by = 0;
   for (let q of QUEB) {
     let dy = W((q >> NS) - me.y); // the short way round, north or south
-    let d = Math.abs(Math.hypot((q & NM) - me.x, dy) - 190);
+    let d = mAbs(mHypot((q & NM) - me.x, dy) - 190);
     if (d < bd) {
       bd = d;
       best = q;
@@ -1316,7 +1318,7 @@ function startFlood() {
   // downstream is west: column by column, the water nearest to where it was in the last
   let path = [];
   let x = best & NM;
-  let y = Math.round(by);
+  let y = mRound(by);
   for (let s = 0; s < 200; s++, x--) {
     for (let d = 0; d < 12; d++) {
       if (GR[cell(x, y + d)] <= G_SHALLOW * GS) {
@@ -1357,7 +1359,7 @@ function douse(x, y, z, by) {
   for (let i = 0; i < 10; i++) puff(x, y, z + 0.5, spread() * 8, spread() * 8, 4 + rand() * 8, 0.6, 3, 1.2);
   let out = 0;
   for (let i = fires.length - 1; i >= 0; i--) {
-    if (Math.hypot(fires[i].x - x, W(fires[i].y - y)) < 9) {
+    if (mHypot(fires[i].x - x, W(fires[i].y - y)) < 9) {
       fires.splice(i, 1);
       out++;
     }
@@ -1376,7 +1378,7 @@ function simulate(dt) {
   windX = (windX + dt * 2) % N;
   windY = (windY + dt * 0.8) % N;
   gT += dt;
-  gRain += ((em && em.k ? 1 : 0) - gRain) * (1 - Math.exp(-0.8 * dt));
+  gRain += ((em && em.k ? 1 : 0) - gRain) * (1 - mExp(-0.8 * dt));
   let play = gMode === PLAY;
   if (talk[1]) {
     // each of the crew has a voice: Darwin croaks, the monito chirps, a note every few letters
@@ -1401,14 +1403,14 @@ function simulate(dt) {
   // they shake it off, by thrashing the stick about and hammering their fire button.
   for (let f of crew) {
     me = f;
-    let sx = Math.sin(f.yaw); // the way it is heading …
-    let sy = -Math.cos(f.yaw);
+    let sx = mSin(f.yaw); // the way it is heading …
+    let sy = -mCos(f.yaw);
     let rx = -sy; // … and its right
     f.im -= dt;
     f.mt -= dt;
     f.ch = 0;
-    f.shk *= Math.exp(-5 * dt);
-    f.fl *= Math.exp(-4 * dt);
+    f.shk *= mExp(-5 * dt);
+    f.fl *= mExp(-4 * dt);
     if (play && f.sh < 30 && ((now * 1.6) | 0) !== (((now - dt) * 1.6) | 0)) tone(880, 880, 0.08, 'square', 0.04); // little shield left
     if (play && f.sh < 35) tell(1, 'ESCUDO BAJO. LOS RESCATES Y LOS\nINCENDIOS APAGADOS LO RECUPERAN.', 128);
     let k = f.key;
@@ -1420,8 +1422,8 @@ function simulate(dt) {
     if (!play) {
       // out of play it flies itself: wandering, or on the title making for the next thing to do
       let g = fires[0] || folk[0];
-      turn = g ? clamp(wrapAngle(Math.atan2(g.x - f.x, f.y - g.y) - me.yaw) * 2, -1, 1) : Math.sin(now * 0.23) * 0.45;
-      lift = clamp((Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + (g ? 8 : 16) - f.z) / 6, -1, 1);
+      turn = g ? clamp(wrapAngle(mAtan2(g.x - f.x, f.y - g.y) - me.yaw) * 2, -1, 1) : mSin(now * 0.23) * 0.45;
+      lift = clamp((mMax(groundAt(f.x, f.y), groundAt(f.x + sx * 25, f.y + sy * 25)) + (g ? 8 : 16) - f.z) / 6, -1, 1);
     } else if (f.hk) {
       turn = -turn;
       lift = -lift;
@@ -1435,12 +1437,12 @@ function simulate(dt) {
       }
       if (pressed[k + '1']) f.pg += 0.07;
     }
-    f.turn += (turn - f.turn) * (1 - Math.exp(-6 * dt));
+    f.turn += (turn - f.turn) * (1 - mExp(-6 * dt));
     // a tap of the stick is a fine correction; held over, the turn tightens until the flyer
     // comes about in little more than its own length
-    f.hard = play && rawX && rawX === f.dir ? Math.min(1, f.hard + dt) : 0;
+    f.hard = play && rawX && rawX === f.dir ? mMin(1, f.hard + dt) : 0;
     f.dir = rawX;
-    f.lift += (lift - f.lift) * (1 - Math.exp(-5 * dt));
+    f.lift += (lift - f.lift) * (1 - mExp(-5 * dt));
 
     // B4: a dash throws it forward, and holding it keeps the burners lit — for as long as
     // there is boost left. Boost comes back once the burners have been off for a moment.
@@ -1454,20 +1456,20 @@ function simulate(dt) {
       }
       if (held[k + '4'] && f.stam > 0) {
         burn = 1;
-        f.stam = Math.max(0, f.stam - dt * 24);
+        f.stam = mMax(0, f.stam - dt * 24);
         f.rest = 0.6;
-      } else if (!held[k + '4'] && (f.rest -= dt) < 0) f.stam = Math.min(100, f.stam + dt * 18);
+      } else if (!held[k + '4'] && (f.rest -= dt) < 0) f.stam = mMin(100, f.stam + dt * 18);
     }
     f.dash -= dt;
     if (f.dash > 0) burn = 1.9;
-    f.thr += (burn - f.thr) * (1 - Math.exp((f.dash > 0 ? -16 : -4) * dt));
-    let push = Math.max(0, (f.thr - 0.3) / 0.7);
+    f.thr += (burn - f.thr) * (1 - mExp((f.dash > 0 ? -16 : -4) * dt));
+    let push = mMax(0, (f.thr - 0.3) / 0.7);
     let fast = 1 + (BOOST - 1) * push;
     f.inv -= dt;
-    f.bank = (f.turn * BANK_ANGLE * Math.PI) / 180;
-    f.pitch = Math.atan2(f.lift * CLIMB_RATE, SPEED);
-    f.kick *= Math.exp(-4 * dt);
-    f.z = Math.min(CEILING, f.z + (f.lift * CLIMB_RATE * fast * (f.lift < 0 && f.agl < 4 ? Math.max(0.35, (f.agl - 1) / 3) : 1) + f.kick) * dt);
+    f.bank = (f.turn * BANK_ANGLE * mPI) / 180;
+    f.pitch = mAtan2(f.lift * CLIMB_RATE, SPEED);
+    f.kick *= mExp(-4 * dt);
+    f.z = mMin(CEILING, f.z + (f.lift * CLIMB_RATE * fast * (f.lift < 0 && f.agl < 4 ? mMax(0.35, (f.agl - 1) / 3) : 1) + f.kick) * dt);
 
     // barrel rolls: one full turn about the nose, left or right, sliding it that way. While
     // it rolls, shots glance off it and a hacker's signal cannot hold it.
@@ -1478,15 +1480,15 @@ function simulate(dt) {
     }
     if (f.rollT > 0) {
       let was = f.rollT;
-      f.rollT = Math.max(0, was - dt / ROLL_TIME);
+      f.rollT = mMax(0, was - dt / ROLL_TIME);
       f.roll = f.rollDir * TAU * ease(1 - f.rollT);
       // the slide is quickest half-way through the roll
-      let slide = (f.rollDir * ROLL_SLIDE * (Math.cos(Math.PI * f.rollT) - Math.cos(Math.PI * was))) / 2;
+      let slide = (f.rollDir * ROLL_SLIDE * (mCos(mPI * f.rollT) - mCos(mPI * was))) / 2;
       f.x += rx * slide;
       f.y += sx * slide;
     } else f.roll = 0;
     if (f.hk) {
-      f.pg = Math.max(0, f.pg - dt * 0.15);
+      f.pg = mMax(0, f.pg - dt * 0.15);
       f.why = 'HACK';
       damage(dt * 2.5, f);
       if (((now * 3) | 0) !== (((now - dt) * 3) | 0)) tone(520, 260, 0.25, 'square', 0.07); // the alarm
@@ -1520,12 +1522,12 @@ function simulate(dt) {
     // the ground and the water are solid, but a touch is forgiven: the flyer scrapes along
     // for a moment, bounced up a little, throwing dust or spray. Only if it is still down
     // after that, or comes down again too soon, does it cost shield and get thrown back up
-    let ground = Math.max(groundAt(f.x, f.y), groundAt(f.x + sx * 3, f.y + sy * 3));
+    let ground = mMax(groundAt(f.x, f.y), groundAt(f.x + sx * 3, f.y + sy * 3));
     // hands off the stick, it will not fly into the ground: it is carried over what is ahead,
     // nose level, so the guns stay where they were pointing
-    let floor = Math.max(ground, groundAt(f.x + sx * 14, f.y + sy * 14)) + 5;
-    if (play && f.free && f.z < floor) f.z += Math.min(floor - f.z, dt * 16);
-    f.graze = Math.max(0, f.graze - dt);
+    let floor = mMax(ground, groundAt(f.x + sx * 14, f.y + sy * 14)) + 5;
+    if (play && f.free && f.z < floor) f.z += mMin(floor - f.z, dt * 16);
+    f.graze = mMax(0, f.graze - dt);
     if (f.z - ground < 1) {
       f.z = ground + 1;
       puff(f.x, f.y, ground + 0.3, spread() * 6, spread() * 6, 3 + rand() * 4, 0.5, GR[cell(f.x, f.y)] > G_SHALLOW * GS ? 4 : 3, 0.9);
@@ -1543,12 +1545,12 @@ function simulate(dt) {
     f.agl = f.z - ground;
     // flying low multiplies every reward
     if (play) {
-      f.low = f.agl < 8 ? Math.min(10, f.low + dt) : Math.max(0, f.low - dt * 4);
+      f.low = f.agl < 8 ? mMin(10, f.low + dt) : mMax(0, f.low - dt * 4);
       f.mul = 1 + ((f.low / 2.5) | 0);
     }
 
     // the wings bend up a little in a climb
-    f.flex += (0.02 + f.lift * 0.05 - f.flex) * (1 - Math.exp(-10 * dt));
+    f.flex += (0.02 + f.lift * 0.05 - f.flex) * (1 - mExp(-10 * dt));
     axesOf(f);
     let nx = f.ax[3];
     let ny = f.ax[4];
@@ -1561,7 +1563,7 @@ function simulate(dt) {
       let dx = t.x - f.x;
       let dy = W(t.y - f.y);
       let dz = t.z - f.z;
-      let d = Math.hypot(dx, dy, dz);
+      let d = mHypot(dx, dy, dz);
       let off = 1 - (dx * nx + dy * ny + dz * nz) / d;
       if (d < 150 && off < best) {
         best = off;
@@ -1610,7 +1612,7 @@ function simulate(dt) {
     modelPoint(f, WINGTIPS[0][0], WINGTIPS[0][1], WINGTIPS[0][2] + up, f.tip, 0);
     modelPoint(f, WINGTIPS[1][0], WINGTIPS[1][1], WINGTIPS[1][2] + up, f.tip, 3);
     if (gMode === OVER) f.trailLen = 0;
-    else if (!f.trailLen || Math.hypot(f.x - f.trailX, f.y - f.trailY) >= TRAIL_STEP) {
+    else if (!f.trailLen || mHypot(f.x - f.trailX, f.y - f.trailY) >= TRAIL_STEP) {
       f.trailHead = (f.trailHead + 1) % TRAIL_N;
       if (f.trailLen < TRAIL_N) f.trailLen++;
       f.trailX = f.x;
@@ -1627,12 +1629,12 @@ function simulate(dt) {
     let c = f.c;
     c.S = (CHASE_WIDTH * BW) / (MW * MODEL_SCALE) / (duo ? 1.25 : 1); // with two, it stands further off
     c.q = 1 / (CHASE_DIST * (1 + 0.16 * push) * ML * MODEL_SCALE); // it drops back as the flyer surges ahead
-    c.k = Math.tan((CHASE_ELEV * Math.PI) / 180);
+    c.k = mTan((CHASE_ELEV * mPI) / 180);
     c.cy = BH * CHASE_Y + spread() * f.shk * 6;
-    c.yaw += wrapAngle(f.yaw - c.yaw) * (1 - Math.exp(-CHASE_FOLLOW * dt));
-    let cx = Math.cos(c.yaw);
-    let cy = Math.sin(c.yaw);
-    let aside = ((f.x - c.x) * cx + (f.y - c.y) * cy) * Math.exp(-CHASE_SLIDE * dt);
+    c.yaw += wrapAngle(f.yaw - c.yaw) * (1 - mExp(-CHASE_FOLLOW * dt));
+    let cx = mCos(c.yaw);
+    let cy = mSin(c.yaw);
+    let aside = ((f.x - c.x) * cx + (f.y - c.y) * cy) * mExp(-CHASE_SLIDE * dt);
     c.x = f.x - cx * aside;
     c.y = f.y - cy * aside;
     c.zr = f.z;
@@ -1654,7 +1656,7 @@ function simulate(dt) {
         } else for (let i = 0; i < 5; i++) light(at[0] + spread() * 5, at[1] + spread() * 5);
         demo ^= 1; // the other one next
       }
-    } else if (Math.hypot(g.x - lead.x, g.y - lead.y) < 7) {
+    } else if (mHypot(g.x - lead.x, g.y - lead.y) < 7) {
       if (fires[0]) douse(g.x, g.y, g.z);
       else {
         folk.length = 0;
@@ -1670,7 +1672,7 @@ function simulate(dt) {
       let dx = s.to.x - s.x;
       let dy = W(s.to.y - s.y);
       let dz = s.to.z - s.z;
-      let d = SHOT / Math.hypot(dx, dy, dz);
+      let d = SHOT / mHypot(dx, dy, dz);
       s.vx = dx * d;
       s.vy = dy * d;
       s.vz = dz * d;
@@ -1683,7 +1685,7 @@ function simulate(dt) {
     let dead = s.t <= 0;
     let gz = groundAt(s.x, s.y);
     let hit = (d) => {
-      if (dead || Math.hypot(d.x - s.x, W(d.y - s.y), d.z - s.z) > (d.r || 1.4) + 1) return;
+      if (dead || mHypot(d.x - s.x, W(d.y - s.y), d.z - s.z) > (d.r || 1.4) + 1) return;
       dead = true;
       puff(s.x, s.y, s.z, 0, 0, 0, 0.14, 2, 1.3);
       d.hp--;
@@ -1722,14 +1724,14 @@ function simulate(dt) {
     if (!d.k) {
       // its orbit: an oval out ahead of them, where it never comes between them and their camera
       d.o += d.w * dt;
-      d.ta = 48 + 20 * Math.cos(d.o);
-      d.ts = 34 * Math.sin(d.o);
+      d.ta = 48 + 20 * mCos(d.o);
+      d.ts = 34 * mSin(d.o);
     }
     let kz = d.kz && t; // diving at them
     if (kz) {
       // a straight run at them. Shot down, it is gone; a roll throws it wide; else it hits
-      let l = Math.hypot(d.a, d.s, d.u);
-      let k = 1 - Math.min(1, (95 * dt) / l);
+      let l = mHypot(d.a, d.s, d.u);
+      let k = 1 - mMin(1, (95 * dt) / l);
       d.a *= k;
       d.s *= k;
       d.u *= k;
@@ -1741,18 +1743,18 @@ function simulate(dt) {
         continue;
       }
     } else {
-      let e = 1 - Math.exp(-1.3 * dt);
+      let e = 1 - mExp(-1.3 * dt);
       d.a += (d.ta - d.a) * e;
       d.s += (d.ts - d.s) * e;
       d.u += (d.tu - d.u) * e;
     }
-    let cfx = Math.sin(t.c.yaw); // the way their camera looks: it keeps its station in front of it
-    let cfy = -Math.cos(t.c.yaw);
+    let cfx = mSin(t.c.yaw); // the way their camera looks: it keeps its station in front of it
+    let cfy = -mCos(t.c.yaw);
     d.x = t.x + cfx * d.a - cfy * d.s;
     d.y = t.y + cfy * d.a + cfx * d.s;
     // over the ground, and over whatever stands between it and them — easing up and down,
     // never jumping
-    d.z += (Math.max(t.z + d.u, groundAt(d.x, d.y) + 4, groundAt((d.x + t.x) / 2, (d.y + t.y) / 2) + 2) - d.z) * Math.min(1, dt * 5);
+    d.z += (mMax(t.z + d.u, groundAt(d.x, d.y) + 4, groundAt((d.x + t.x) / 2, (d.y + t.y) / 2) + 2) - d.z) * mMin(1, dt * 5);
     if (!play) continue;
     if (!d.k) {
       d.cd -= dt;
@@ -1761,8 +1763,8 @@ function simulate(dt) {
         tone(300, 1100, 0.5, 'sawtooth', 0.07); // it winds up
       }
     } else if (!t.hk && t.im <= 0 && d.a < 70) {
-      d.ch = t.rollT > 0 ? Math.max(0, d.ch - dt * 1.5) : d.ch + dt / 3;
-      t.ch = Math.max(t.ch, d.ch);
+      d.ch = t.rollT > 0 ? mMax(0, d.ch - dt * 1.5) : d.ch + dt / 3;
+      t.ch = mMax(t.ch, d.ch);
       if (d.ch >= 1) {
         d.ch = 0;
         t.hk = 1;
@@ -1783,8 +1785,8 @@ function simulate(dt) {
     if (!em || gEmN > 1) {
       gSpawnT -= tick;
       // (more of them, and sooner, with every emergency the crew has been through)
-      if (gSpawnT < 0 && drones.length < Math.min(7, 1 + n + gEmN + (swarm ? 3 : 0))) {
-        gSpawnT = Math.max(3, 8 - gEmN) / n / (swarm ? 3 : 1);
+      if (gSpawnT < 0 && drones.length < mMin(7, 1 + n + gEmN + (swarm ? 3 : 0))) {
+        gSpawnT = mMax(3, 8 - gEmN) / n / (swarm ? 3 : 1);
         spawnDrone(0);
       }
       if (gEmN) {
@@ -1827,7 +1829,7 @@ function simulate(dt) {
         // it, wider than the bed was. Anyone it reaches is lost
         if (em.t > 8) {
           if (!em.at) say('¡SE DESBORDÓ EL RÍO!');
-          em.at = Math.min(em.path.length / 2 - 1, em.at + dt * 3);
+          em.at = mMin(em.path.length / 2 - 1, em.at + dt * 3);
           for (; em.done < em.at; em.done++) {
             // from one bank to the other here, and four cells beyond each
             let x = em.path[em.done * 2];
@@ -1858,7 +1860,7 @@ function simulate(dt) {
         if (rand() < dt * 14) puff(em.x + spread() * 3, em.y + spread() * 3, em.z + 1, spread() * 3, spread() * 3, 2 + rand() * 3, 1.2, 4, 1.6);
         for (let i = folk.length - 1; i >= 0; i--) {
           let f = folk[i];
-          let by = crew.find((c) => Math.hypot(c.x - f.x, W(c.y - f.y)) < 5 && c.z - f.z < 7);
+          let by = crew.find((c) => mHypot(c.x - f.x, W(c.y - f.y)) < 5 && c.z - f.z < 7);
           if (by) {
             folk.splice(i, 1);
             em.saved++;
@@ -1881,13 +1883,13 @@ function simulate(dt) {
 
   // ── fires burn: flames and black smoke
   for (let f of fires) {
-    if (crew.every((c) => Math.abs(f.x - c.x) + Math.abs(W(f.y - c.y)) > 260)) continue;
+    if (crew.every((c) => mAbs(f.x - c.x) + mAbs(W(f.y - c.y)) > 260)) continue;
     if (rand() < dt * 9) puff(f.x + spread(), f.y + spread(), f.z + 0.5, spread(), spread(), 4 + rand() * 4, 0.6, 1, 1.3);
     if (rand() < dt * 2.5) puff(f.x, f.y, f.z + 3, 1.5 + spread(), 0.6 + spread(), 5 + rand() * 3, 2.2, 5, 1.8);
   }
 
   // ── everything that drifts
-  let drag = Math.exp(-3 * dt);
+  let drag = mExp(-3 * dt);
   for (let o = 0; o < puffs.length; o += PUFF_F) {
     if (puffs[o + 6] <= 0) continue;
     puffs[o + 6] += dt;
@@ -1937,8 +1939,8 @@ function shadowed(relX, relY, h) {
     if (dx > 7 || dx < -7 || dy > 7 || dy < -7) continue;
     let cy = SJ[o + 3];
     let sy = SJ[o + 4];
-    let i = Math.floor((dx * cy + dy * sy) * SJ[o + 5] + MCX + 0.5);
-    let jj = Math.floor(MPJ - (dx * sy - dy * cy) * invMs + 0.5);
+    let i = mFloor((dx * cy + dy * sy) * SJ[o + 5] + MCX + 0.5);
+    let jj = mFloor(MPJ - (dx * sy - dy * cy) * invMs + 0.5);
     if (i >= 0 && i < MW && jj >= 0 && jj < ML && MASK[jj * MW + i]) return 1;
   }
   return 0;
@@ -1961,10 +1963,10 @@ function drawWorld() {
   PA.fill(0);
 
   let camX = cam.x + BIG;
-  let camY = cam.y - Math.floor(cam.y / N) * N + 4 * N;
+  let camY = cam.y - mFloor(cam.y / N) * N + 4 * N;
   let tick = (now * 15) | 0;
   let over = gRain * 56; // a storm closes the sky: this much more cloud everywhere, in sixteenths
-  let A = S * (k + q * Math.max(zr, 1)); // screen rows of sea per unit of depth, at the flyer
+  let A = S * (k + q * mMax(zr, 1)); // screen rows of sea per unit of depth, at the flyer
   let view = VIEW_DIST + zr * 4; // the eye reaches further from higher up, and the haze starts further out
   let fogStart = view * 0.27;
   let fogK = FOG_N / (view - fogStart);
@@ -1994,7 +1996,7 @@ function drawWorld() {
     let pg = fog * NG * NL; // … and ground colours
     let blend = m > BLEND_M; // cells are magnified here
     let sharp = m > 1.7 ? 1 : m < 0.9 ? 0 : (m - 0.9) * 1.25; // … and here they are too small to tell apart
-    let cloudRow = Math.min(b1 - m * (CA + CK), b2 - m2 * (CA + CK)); // the highest a cloud can show
+    let cloudRow = mMin(b1 - m * (CA + CK), b2 - m2 * (CA + CK)); // the highest a cloud can show
 
     let relX = fwdX * v - rgtX * (CXS - VX0) * inv;
     let relY = fwdY * v - rgtY * (CXS - VX0) * inv;
@@ -2159,15 +2161,15 @@ function drawWorld() {
 function drawSky() {
   let { S, q, k } = cam;
   let hy = cam.cy - (S * k) / q;
-  let hyi = Math.round(hy);
+  let hyi = mRound(hy);
 
   // the sun, over the horizon opposite the shadows
   let sunX = -1e6;
   let sunY = 0;
   let d = wrapAngle(SUN_AZ - cam.yaw);
-  if (Math.abs(d) < 1.3) {
-    sunX = CXS + (S / q) * Math.tan(d);
-    sunY = hy - ((S / q) * Math.tan(SUN_ELEV)) / Math.cos(d);
+  if (mAbs(d) < 1.3) {
+    sunX = CXS + (S / q) * mTan(d);
+    sunY = hy - ((S / q) * mTan(SUN_ELEV)) / mCos(d);
   }
   let disc = 49 * RS * RS;
   let glow = 1600 * RS * RS;
@@ -2176,7 +2178,7 @@ function drawSky() {
   let tr = SKY_TOP[0] + (4 - SKY_TOP[0]) * high;
   let tg = SKY_TOP[1] + (8 - SKY_TOP[1]) * high;
   let tb = SKY_TOP[2] + (26 - SKY_TOP[2]) * high;
-  let pan = Math.round((cam.yaw * S) / q);
+  let pan = mRound((cam.yaw * S) / q);
   let stars = (high * 255) | 0;
 
   for (let y = 0, p = 0; y < BH; y++) {
@@ -2192,7 +2194,7 @@ function drawSky() {
         let dd = dx * dx + dy * dy;
         if (dd < disc) c = colSun;
         else if (dd < glow) {
-          let fall = 1 - Math.sqrt((dd - disc) / (glow - disc));
+          let fall = 1 - mSqrt((dd - disc) / (glow - disc));
           c = mix(row, colSun, (fall * fall * 200) | 0);
         } else if (stars > 40 && t > 0.3 && hash2(x + pan, y - hyi, 7) % 173 === 0) c = mix(c, colSun, stars);
       }
@@ -2239,13 +2241,13 @@ function drawTrails(f) {
         let age = n / TRAIL_N;
         let keep = ((1 - age) * (1 - age) * 255) | 0;
         let thick = prM > 1.7 * RS && age < 0.5 ? 2 : 1;
-        let len = Math.max(Math.abs(prX - ox), Math.abs(prY - oy)) | 0;
+        let len = mMax(mAbs(prX - ox), mAbs(prY - oy)) | 0;
         if (len < 300) {
           let steps = len + 1;
           for (let i = 0; i <= steps; i++) {
             let u = i / steps;
-            let x = Math.floor(ox + (prX - ox) * u);
-            let y = Math.floor(oy + (prY - oy) * u);
+            let x = mFloor(ox + (prX - ox) * u);
+            let y = mFloor(oy + (prY - oy) * u);
             let dep = ov + (prV - ov) * u;
             if (y < 0 || y >= BH) continue;
             for (let j = 0; j < thick; j++) {
@@ -2282,10 +2284,10 @@ function plotVoxel(ma, mb, mc, colour) {
   let sx = fx0 + ma * STEP[0] + mb * STEP[3] + mc * STEP[6];
   let sy = fy0 + ma * STEP[1] + mb * STEP[4] + mc * STEP[7];
   let dep = fv0 + ma * STEP[2] + mb * STEP[5] + mc * STEP[8];
-  let xa = Math.round(sx - fHalf);
-  let xb = Math.round(sx + fHalf);
-  let ya = Math.round(sy - fHalf);
-  let yb = Math.round(sy + fHalf);
+  let xa = mRound(sx - fHalf);
+  let xb = mRound(sx + fHalf);
+  let ya = mRound(sy - fHalf);
+  let yb = mRound(sy + fHalf);
   if (xb <= xa) xb = xa + 1;
   if (yb <= ya) yb = ya + 1;
   if (xa < 0) xa = 0;
@@ -2341,7 +2343,7 @@ function paint(f, x, y, v, s) {
   fx0 = x;
   fy0 = y;
   fv0 = v;
-  fHalf = Math.max(0.5, (s * 0.71) / MK);
+  fHalf = mMax(0.5, (s * 0.71) / MK);
 
   // each model axis as a step on screen (x, y) and in depth
   let a = f.ax;
@@ -2373,13 +2375,13 @@ function paint(f, x, y, v, s) {
     let d = NQ[o] * lx + NQ[o + 1] * ly + NQ[o + 2] * lz;
     let h = NQ[o] * hx + NQ[o + 1] * hy + NQ[o + 2] * hz;
     LV[q] = d > 0 ? d : 0;
-    SP[q] = h > 0 ? Math.pow(h, 20) : 0;
+    SP[q] = h > 0 ? mPow(h, 20) : 0;
   }
 
   let shade = f.shade;
   let flex = f.flex;
   let skin = (f.id + 1) * NMAT;
-  let fire = Math.min(1, f.thr) * 90; // how brightly the burners light the tail
+  let fire = mMin(1, f.thr) * 90; // how brightly the burners light the tail
   for (let i = 0; i < n; i++) {
     let q = ni[i];
     let m = col[i];
@@ -2398,10 +2400,10 @@ function soft(x, y, z, r, colour, dens) {
 // The same, at the place on screen the last projection left (prX, prY, at depth prV).
 function blot(r, colour, dens) {
   r *= prM;
-  let x0 = Math.max(0, Math.floor(prX - r));
-  let x1 = Math.min(BW - 1, Math.ceil(prX + r));
-  let y0 = Math.max(0, Math.floor(prY - r));
-  let y1 = Math.min(BH - 1, Math.ceil(prY + r));
+  let x0 = mMax(0, mFloor(prX - r));
+  let x1 = mMin(BW - 1, mCeil(prX + r));
+  let y0 = mMax(0, mFloor(prY - r));
+  let y1 = mMin(BH - 1, mCeil(prY + r));
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       let dd = ((x - prX) * (x - prX) + (y - prY) * (y - prY)) / (r * r);
@@ -2420,15 +2422,15 @@ let HEAT = [pack(255, 250, 220), pack(255, 214, 110), pack(255, 160, 50), pack(2
 let TIP = new Float32Array(3);
 // `s` is the size of the flyer's design unit on screen, as it was just drawn
 function drawFlames(f, s) {
-  let open = Math.max(0, (f.thr - 0.3) / 0.7); // 0 idling · 1 burners lit · more in a dash
-  let len = (1.1 + open * 3.8) * (1 + 0.1 * Math.sin(now * 53) + 0.06 * Math.sin(now * 31 + 2));
+  let open = mMax(0, (f.thr - 0.3) / 0.7); // 0 idling · 1 burners lit · more in a dash
+  let len = (1.1 + open * 3.8) * (1 + 0.1 * mSin(now * 53) + 0.06 * mSin(now * 31 + 2));
   for (let nz of NOZZLES) {
     for (let i = 17; i >= 0; i--) {
       // from the tip back to the root, so the white of the root is what shows from behind;
       // each light is placed in the flyer's own frame, like its voxels, so it stays on the nozzle
       let t = i / 17;
       let d = t * len;
-      let wob = Math.sin(now * 37 + i * 1.7 + nz[0]) * t * 0.08 * (1 + open) * invMs;
+      let wob = mSin(now * 37 + i * 1.7 + nz[0]) * t * 0.08 * (1 + open) * invMs;
       let ma = nz[0] + f.turn * d * d * 0.09 * invMs + wob;
       let mb = nz[1] - d * invMs;
       let mc = nz[2] + wob;
@@ -2436,7 +2438,7 @@ function drawFlames(f, s) {
       prY = fy0 + ma * STEP[1] + mb * STEP[4] + mc * STEP[7];
       prV = fv0 + ma * STEP[2] + mb * STEP[5] + mc * STEP[8];
       prM = s * invMs;
-      blot((0.15 + open * 0.07) * (1 - t) + 0.04, HEAT[t < 0.07 ? 0 : Math.min(4, 1 + ((t * 3.6) | 0))], (1 - t * 0.9) * 230 * (open > 0.6 ? 0.75 + 0.25 * Math.sin(d * 5 - now * 26) : 1));
+      blot((0.15 + open * 0.07) * (1 - t) + 0.04, HEAT[t < 0.07 ? 0 : mMin(4, 1 + ((t * 3.6) | 0))], (1 - t * 0.9) * 230 * (open > 0.6 ? 0.75 + 0.25 * mSin(d * 5 - now * 26) : 1));
     }
   }
 }
@@ -2466,10 +2468,10 @@ function ball(x, y, z, r, mat, glow) {
   if (!project(x, y, z)) return;
   let R = r * prM;
   if (R < 0.4 || prX < -R || prX > BW + R || prY < -R || prY > BH + R) return;
-  let x0 = Math.max(0, Math.floor(prX - R));
-  let x1 = Math.min(BW - 1, Math.ceil(prX + R));
-  let y0 = Math.max(0, Math.floor(prY - R));
-  let y1 = Math.min(BH - 1, Math.ceil(prY + R));
+  let x0 = mMax(0, mFloor(prX - R));
+  let x1 = mMin(BW - 1, mCeil(prX + R));
+  let y0 = mMax(0, mFloor(prY - R));
+  let y1 = mMin(BH - 1, mCeil(prY + R));
   let o = mat * NLV;
   for (let py = y0; py <= y1; py++) {
     for (let px = x0; px <= x1; px++) {
@@ -2477,7 +2479,7 @@ function ball(x, y, z, r, mat, glow) {
       let dy = (py + 0.5 - prY) / R;
       let dd = dx * dx + dy * dy;
       if (dd > 1) continue;
-      let nz = Math.sqrt(1 - dd);
+      let nz = mSqrt(1 - dd);
       let dep = prV - nz * r;
       let p = py * BW + px;
       if (ZB[p] <= dep) continue;
@@ -2496,14 +2498,14 @@ function beam(x1, y1, z1, x2, y2, z2, w, colour, alpha) {
   let av = prV;
   let am = prM;
   if (!project(x2, y2, z2)) return;
-  let th = Math.max(1, Math.round(w * (am + prM) * 0.5));
-  let len = Math.max(Math.abs(prX - ax), Math.abs(prY - ay));
+  let th = mMax(1, mRound(w * (am + prM) * 0.5));
+  let len = mMax(mAbs(prX - ax), mAbs(prY - ay));
   if (len > 1200) return;
-  let n = Math.ceil(len / (alpha > 250 ? 1 : th)) + 1; // see-through bars are laid end to end, never doubled up
+  let n = mCeil(len / (alpha > 250 ? 1 : th)) + 1; // see-through bars are laid end to end, never doubled up
   for (let i = 0; i <= n; i++) {
     let u = i / n;
-    let bx = Math.round(ax + (prX - ax) * u - th / 2);
-    let by = Math.round(ay + (prY - ay) * u - th / 2);
+    let bx = mRound(ax + (prX - ax) * u - th / 2);
+    let by = mRound(ay + (prY - ay) * u - th / 2);
     let dep = av + (prV - av) * u;
     for (let y = by < 0 ? 0 : by; y < by + th && y < BH; y++) {
       for (let x = bx < 0 ? 0 : bx; x < bx + th && x < BW; x++) {
@@ -2531,36 +2533,36 @@ function drawThings() {
     let dx = d.f.x - d.x;
     let dy = d.f.y - d.y;
     let dz = d.f.z - d.z;
-    let l = (d.r * 0.8) / Math.hypot(dx, dy, dz);
+    let l = (d.r * 0.8) / mHypot(dx, dy, dz);
     ball(d.x, d.y, d.z, d.r, d.k ? ENGINE : d.kz && (now * 12) & 1 ? GLOW : HEAD, d.kz); // diving, it flashes
     ball(d.x + dx * l, d.y + dy * l, d.z + dz * l, d.r * 0.45, d.k ? GLOW : PLUME, d.k);
-    let bob = Math.sin(now * 14 + d.s) * 0.3;
+    let bob = mSin(now * 14 + d.s) * 0.3;
     ball(d.x + rgtX * d.r * 1.5, d.y + rgtY * d.r * 1.5, d.z + bob, d.r * 0.5, BODY);
     ball(d.x - rgtX * d.r * 1.5, d.y - rgtY * d.r * 1.5, d.z - bob, d.r * 0.5, BODY);
     if (d.k) {
       beam(d.x, d.y, d.z + d.r, d.x, d.y, d.z + d.r + 2.5, 0.3, colRed, 255);
-      if (d.ch > 0) beam(d.x, d.y, d.z, d.f.x, d.f.y, d.f.z, 0.5, colRed, 90 + ((d.ch * 120 + Math.sin(now * 40) * 40) | 0));
+      if (d.ch > 0) beam(d.x, d.y, d.z, d.f.x, d.f.y, d.f.z, 0.5, colRed, 90 + ((d.ch * 120 + mSin(now * 40) * 40) | 0));
     }
   }
   for (let f of fires) {
     // three tongues of flame each, yellow at the root and red at the tip, licking about
     for (let j = 0; j < 3; j++) {
-      let tall = 0.75 + 0.3 * Math.sin(now * 9 + f.x * 7 + j * 2);
+      let tall = 0.75 + 0.3 * mSin(now * 9 + f.x * 7 + j * 2);
       for (let i = 0; i < 5; i++) {
-        soft(f.x + (j - 1) * 1.1 + Math.sin(now * 7 + i + j * 3) * i * 0.12, f.y + ((j * 7) % 3) - 1, f.z + 0.4 + i * tall, 1.2 - i * 0.2, FLAMES[i >> 1], 235 - i * 25);
+        soft(f.x + (j - 1) * 1.1 + mSin(now * 7 + i + j * 3) * i * 0.12, f.y + ((j * 7) % 3) - 1, f.z + 0.4 + i * tall, 1.2 - i * 0.2, FLAMES[i >> 1], 235 - i * 25);
       }
     }
   }
   for (let f of folk) {
     // a light on the ground and a tall beacon above it
     ball(f.x, f.y, f.z + 0.6, 0.7, PLUME, 1);
-    beam(f.x, f.y, f.z + 1, f.x, f.y, f.z + 26, 0.5, colTrail, 110 + ((Math.sin(now * 6) * 60) | 0));
+    beam(f.x, f.y, f.z + 1, f.x, f.y, f.z + 26, 0.5, colTrail, 110 + ((mSin(now * 6) * 60) | 0));
   }
   if (em && em.k) {
     // a wall of brown water from bank to bank, under a ragged crest of foam
     beam(em.x, em.y - 10, em.z + 1, em.x, em.y + 10, em.z + 1, 2.2, colMud, 255);
     for (let i = -5; i < 5; i++) {
-      let lift = (j) => em.z + 2.2 + Math.sin(now * 7 + j * 1.9) * 0.45;
+      let lift = (j) => em.z + 2.2 + mSin(now * 7 + j * 1.9) * 0.45;
       beam(em.x - 0.4, em.y + i * 2, lift(i), em.x - 0.4, em.y + i * 2 + 2, lift(i + 1), 0.5, colFoam, 255);
     }
   }
@@ -2573,16 +2575,16 @@ function drawThings() {
     // the buckets, trailing a little behind
     for (let f of crew) {
       if (!fires[0] && !f.w) continue;
-      let x = f.x - Math.sin(f.yaw) * 2;
-      let y = f.y + Math.cos(f.yaw) * 2;
-      let z = Math.max(groundAt(x, y) + 0.9, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
+      let x = f.x - mSin(f.yaw) * 2;
+      let y = f.y + mCos(f.yaw) * 2;
+      let z = mMax(groundAt(x, y) + 0.9, f.z - ROPE - (f.agl < ROPE + 2 ? 2 : 0)); // the line pays out near the ground
       beam(f.x, f.y, f.z, x, y, z, 0.12, colOutline, 255);
       if (project(x, y, z)) {
         // a model of its own, lit like the flyers: empty, or with water in it
         let k = f.id * 2 + (f.w > 0);
         let bk = BUCKETS[k] || (BUCKETS[k] = { id: -1, ax: new Float32Array(9), thr: 0, flex: 0, sunX: 0, sunY: 0, m: MODELS[4 + (f.w > 0)] });
-        bk.ax[0] = bk.ax[4] = Math.cos(f.yaw);
-        bk.ax[1] = Math.sin(f.yaw);
+        bk.ax[0] = bk.ax[4] = mCos(f.yaw);
+        bk.ax[1] = mSin(f.yaw);
         bk.ax[3] = -bk.ax[1];
         bk.ax[8] = 1;
         paint(bk, prX, prY, prV, prM * 0.13);
@@ -2601,7 +2603,7 @@ function drawSight(f) {
   let t = f.lock;
   let ok = t ? project(t.x, t.y, t.z) : project(f.x + f.ax[3] * 60, f.y + f.ax[4] * 60, f.z + f.ax[5] * 60);
   if (!ok) return;
-  let r = t ? Math.max(5, t.r * prM + 3) | 0 : 4;
+  let r = t ? mMax(5, t.r * prM + 3) | 0 : 4;
   let c = t ? colRed : f.id ? GOLD : colTrail;
   let x = prX | 0;
   let y = prY | 0;
@@ -2648,10 +2650,10 @@ let TX = 0; // lettering is shifted by this much: where a view drawn in the midd
 let TY = 0;
 
 function box(x, y, w, h, colour) {
-  let x0 = Math.max(0, x | 0);
-  let x1 = Math.min(BW, (x + w) | 0);
-  let y1 = Math.min(BH, (y + h) | 0);
-  for (let py = Math.max(0, y | 0); py < y1; py++) {
+  let x0 = mMax(0, x | 0);
+  let x1 = mMin(BW, (x + w) | 0);
+  let y1 = mMin(BH, (y + h) | 0);
+  for (let py = mMax(0, y | 0); py < y1; py++) {
     for (let p = py * BW + x0, e = py * BW + x1; p < e; p++) FB[p] = colour;
   }
 }
@@ -2680,7 +2682,7 @@ function text(str, x, y, colour, size, align, plain) {
     plain = 1;
     colour = colour === GOLD ? pack(196, 120, 0) : colour === INK || colour === DIM ? EDGE : colour;
   }
-  let edge = plain ? 0 : Math.min(10, 2.5 + size / 12);
+  let edge = plain ? 0 : mMin(10, 2.5 + size / 12);
   for (let m of str.matchAll(/B(?:OTÓN )?([1-6])|(?:CON|EL|O) ([1-6])\b/g)) lit |= 1 << (m[1] || m[2]);
   if (t.text !== str) t.setText(str);
   if (t.size !== size) t.setFontSize((t.size = size));
@@ -2699,9 +2701,9 @@ let BUCKETS = []; // the crew's water buckets as things to paint: one each, empt
 let HEADS = [0, 1].map((id) => ({ id, ax: new Float32Array(9), thr: 0, flex: 0 }));
 function face(who, x, y, s, flip) {
   let f = HEADS[who];
-  let t = 0.85 + Math.sin(now * 1.4 + who) * 0.15;
-  let c = Math.cos(t) * (flip ? -1 : 1);
-  let n = Math.sin(t);
+  let t = 0.85 + mSin(now * 1.4 + who) * 0.15;
+  let c = mCos(t) * (flip ? -1 : 1);
+  let n = mSin(t);
   let a = f.ax;
   a[3] = rgtX * c - fwdX * n; // its nose points across the screen, and out of it a little
   a[4] = rgtY * c - fwdY * n;
@@ -2733,7 +2735,7 @@ function gauge(x, y, w, share, colour, h) {
 
 function disc(x, y, r, colour) {
   for (let d = -r; d <= r; d++) {
-    let w = Math.sqrt(r * r - d * d) | 0;
+    let w = mSqrt(r * r - d * d) | 0;
     box(x - w, y + d, 2 * w + 1, 1, colour);
   }
 }
@@ -2806,7 +2808,7 @@ function mark(x, y, z, colour, label, always) {
   let v = dx * fwdX + dy * fwdY;
   let u = dx * rgtX + dy * rgtY;
   let w = 1 + cam.q * v;
-  if (always) label += ' ' + ((Math.hypot(dx, dy) / 5) | 0) * 50 + ' M';
+  if (always) label += ' ' + ((mHypot(dx, dy) / 5) | 0) * 50 + ' M';
   let sx = CXS + u * 1e3; // behind the camera: it comes in from below
   let sy = BH * 3;
   if (w > 0.15) {
@@ -2824,8 +2826,8 @@ function mark(x, y, z, colour, label, always) {
   let half = mid - TOP - 9;
   let ex = sx - CXS;
   let ey = sy - mid;
-  let side = Math.abs(ex) * half > Math.abs(ey) * (HW - 9); // it leaves by the left or right edge
-  let k = side ? (HW - 9) / Math.abs(ex) : half / Math.abs(ey);
+  let side = mAbs(ex) * half > mAbs(ey) * (HW - 9); // it leaves by the left or right edge
+  let k = side ? (HW - 9) / mAbs(ex) : half / mAbs(ey);
   let px = CXS + ex * k;
   let py = mid + ey * k;
   for (let i = -1; i < 14; i++) {
@@ -2833,11 +2835,11 @@ function mark(x, y, z, colour, label, always) {
     let n = i < 8 ? i : i - 8;
     let c = i < 8 ? EDGE : colour;
     let o = i < 8 ? -1 : 0;
-    if (side) box(px - Math.sign(ex) * (n + o), py - n, 1, 2 * n + 1, c);
-    else box(px - n, py - Math.sign(ey) * (n + o), 2 * n + 1, 1, c);
+    if (side) box(px - mSign(ex) * (n + o), py - n, 1, 2 * n + 1, c);
+    else box(px - n, py - mSign(ey) * (n + o), 2 * n + 1, 1, c);
   }
-  if (side) tag(label, px - Math.sign(ex) * (label.length * 2.4 + 12), py - 5, colour);
-  else tag(label, px, py - Math.sign(ey) * 13 - 5, colour);
+  if (side) tag(label, px - mSign(ex) * (label.length * 2.4 + 12), py - 5, colour);
+  else tag(label, px, py - mSign(ey) * 13 - 5, colour);
 }
 
 // The radar: what is around `o` — one of the crew — nose up.
@@ -2845,16 +2847,16 @@ function radar(cx, cy, R, o) {
   if (flat) disc(cx, cy, R, pack(30, 100, 54)); // on a white card it has a green face
   for (let a = 0; a < TAU; a += 0.02) {
     // a ring, dark outside and pale inside, with nothing behind it
-    for (let i = 0; i < 3; i++) box(cx + Math.sin(a) * (R + 1 - i), cy + Math.cos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
+    for (let i = 0; i < 3; i++) box(cx + mSin(a) * (R + 1 - i), cy + mCos(a) * (R + 1 - i), 1, 1, i ? DIM : EDGE);
   }
-  let sx = Math.sin(o.yaw);
-  let sy = -Math.cos(o.yaw);
+  let sx = mSin(o.yaw);
+  let sy = -mCos(o.yaw);
   let blip = (t, colour, size) => {
     let dx = t.x - o.x;
     let dy = W(t.y - o.y);
     let px = ((dy * sx - dx * sy) * R) / 170;
     let py = (-(dx * sx + dy * sy) * R) / 170;
-    let d = Math.hypot(px, py) / (R - 2);
+    let d = mHypot(px, py) / (R - 2);
     if (d > 1) {
       px /= d;
       py /= d;
@@ -2986,7 +2988,7 @@ function drawHud() {
     // stratosphere ruled across it, and the flyer
     let foot = D ? oy + 146 : BH - 6;
     let tall = D ? 26 : 34;
-    let rung = (z) => foot - Math.sqrt(clamp(z, 0, CEILING) / CEILING) * tall;
+    let rung = (z) => foot - mSqrt(clamp(z, 0, CEILING) / CEILING) * tall;
     box(D + 5, foot - tall - 1, 6, tall + 2, OFF);
     box(D + 6, rung(f.z - f.agl), 4, foot - rung(f.z - f.agl), DIM);
     box(D + 4, rung(CA), 8, 1, INK);
@@ -3029,7 +3031,7 @@ function drawHud() {
     // dark words on a white card of their own — a thin black edge, its corners a little
     // rounded — as wide as the longer line, so nothing in the scene shows through them (the
     // marks and their names keep above it); the head stands free
-    let w = Math.max(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 22;
+    let w = mMax(...talk[1].split('\n').map((l) => l.length)) * 4.8 + 22;
     card(112, BH - 61, w, 56);
     face(talk[0], 82, BH - 30, 2.5);
     text(NAMES[talk[0]] + ' · BOTÓN 6: SALTAR', 123, BH - 54, colRed, 1, 0, 1);
@@ -3077,9 +3079,9 @@ function view(alive) {
       SJ[o] = f.x - cam.x;
       SJ[o + 1] = W(f.y - cam.y);
       SJ[o + 2] = f.z;
-      SJ[o + 3] = Math.cos(f.yaw);
-      SJ[o + 4] = Math.sin(f.yaw);
-      SJ[o + 5] = invMs / Math.max(0.22, Math.abs(Math.cos(f.bank + f.roll)));
+      SJ[o + 3] = mCos(f.yaw);
+      SJ[o + 4] = mSin(f.yaw);
+      SJ[o + 5] = invMs / mMax(0.22, mAbs(mCos(f.bank + f.roll)));
     }
   }
 
@@ -3125,8 +3127,8 @@ function drawFrame() {
   let shot = (f) => {
     me = f;
     cam = f.c;
-    fwdX = Math.sin(cam.yaw);
-    fwdY = -Math.cos(cam.yaw);
+    fwdX = mSin(cam.yaw);
+    fwdY = -mCos(cam.yaw);
     rgtX = -fwdY;
     rgtY = fwdX;
     sunR = LIGHT[0] * rgtX + LIGHT[1] * rgtY;
@@ -3235,7 +3237,7 @@ function update(time, delta) {
     resetFlight();
   }
 
-  let dt = Math.min(delta / 1000, 0.1);
+  let dt = mMin(delta / 1000, 0.1);
   if (dt > 0.05) {
     // a slow machine keeps real time: a long frame is flown in two steps
     dt /= 2;
