@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.dev.vars*
+# Copied from the repo root by scripts/build.mjs (public/img/ is not generated: keep it)
+public/game.js
+public/cover.png
+public/fonts/
+# The root .gitignore drops every package-lock.json; keep this one so installs match the pinned workerd
+!package-lock.json

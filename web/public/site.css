@@ -1,0 +1,832 @@
+/* 2075: landing (/) and play page (/jugar). A white page, the game's navy for the text and the
+   logo's red as the one accent. */
+
+/* VT323, cut down to the characters the game uses (uppercase, digits, a little punctuation).
+   Copied out of game.js at build time. Use it only for uppercase display text. */
+@font-face {
+  font-family: 'V2075';
+  src: url('/fonts/v.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  --bg: #fff;
+  --surface: #f0f6ff; /* the game's INK, its lettering white: keys and buttons on the page */
+  --line: #d3deec;
+  --line-strong: #a3b2c6;
+  --ink: #0c1626; /* the game's EDGE navy */
+  --dim: #34435a;
+  --mute: #5a6676;
+  --red: #ff2846; /* the logo */
+  --red-ink: #c8102e; /* the logo red, dark enough for text */
+  --p1: #2f7a17; /* Darwin's green ship */
+  --p2: #8b5a2b; /* the monito's brown ship */
+  --pixel: 'V2075', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --col: 46rem; /* the reading column every part of the landing shares */
+  color-scheme: light;
+  scrollbar-color: var(--line-strong) var(--bg);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1.125rem/1.6 var(--text);
+}
+
+::selection {
+  background: var(--red);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+a {
+  color: var(--ink);
+  text-decoration-color: var(--red);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--red-ink);
+}
+
+img {
+  max-width: 100%;
+}
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────── shared pieces */
+
+/* Buttons are drawn like the game's dialogue cards: a fill inside a dark edge one game pixel
+   (--p) thick, each corner cut by one pixel so the edge steps around it. ::before paints the
+   shape behind the label, as bars (the game's card() draws the same four boxes):
+     the edge: two bars, each one pixel short at the ends, so the outer corner pixel stays empty;
+     the fill: the same two bars inset one pixel, so the inner corner pixel stays dark.
+   The play button (.btn) is red, with a black body (--drop) under it, like the logo's numerals.
+   The other buttons (.btn--alt) are the dialogue card itself: light, flat. */
+.btn {
+  --p: 3px;
+  --h: 60px;
+  --fill: var(--red);
+  --drop: calc(2 * var(--p));
+  --ls: 0.08em;
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--h);
+  margin: 0;
+  /* the letter spacing after the last letter comes off the right */
+  padding: 0.06em calc(1.1em - var(--ls)) 0 1.1em;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 400 2.25rem/1 var(--pixel);
+  letter-spacing: var(--ls);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 calc(-1 * var(--drop));
+  z-index: -1;
+  background:
+    linear-gradient(var(--fill) 0 0) calc(2 * var(--p)) var(--p) / calc(100% - 4 * var(--p))
+      calc(100% - var(--drop) - 2 * var(--p)),
+    linear-gradient(var(--fill) 0 0) var(--p) calc(2 * var(--p)) / calc(100% - 2 * var(--p))
+      calc(100% - var(--drop) - 4 * var(--p)),
+    linear-gradient(var(--ink) 0 0) var(--p) 0 / calc(100% - 2 * var(--p)) calc(100% - var(--drop)),
+    linear-gradient(var(--ink) 0 0) 0 var(--p) / 100% calc(100% - var(--drop) - 2 * var(--p)),
+    /* the body: the edge's shape again, --drop lower */
+    linear-gradient(#000 0 0) var(--p) var(--drop) / calc(100% - 2 * var(--p)) calc(100% - var(--drop)),
+    linear-gradient(#000 0 0) 0 calc(var(--drop) + var(--p)) / 100% calc(100% - var(--drop) - 2 * var(--p));
+  background-repeat: no-repeat;
+}
+
+.btn:hover {
+  --fill: #ff4660;
+  color: var(--ink);
+}
+
+.btn:active {
+  --drop: var(--p);
+  transform: translateY(var(--p));
+}
+
+/* Keyboard focus: a bigger card behind the button, one pixel clear of it all round. */
+.btn:focus-visible {
+  outline: none;
+}
+
+.btn:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: calc(-2 * var(--p)) calc(-2 * var(--p)) calc(-2 * var(--p) - var(--drop));
+  z-index: -2;
+  background:
+    linear-gradient(var(--bg) 0 0) calc(2 * var(--p)) var(--p) / calc(100% - 4 * var(--p)) calc(100% - 2 * var(--p)),
+    linear-gradient(var(--bg) 0 0) var(--p) calc(2 * var(--p)) / calc(100% - 2 * var(--p)) calc(100% - 4 * var(--p)),
+    linear-gradient(var(--ink) 0 0) var(--p) 0 / calc(100% - 2 * var(--p)) 100%,
+    linear-gradient(var(--ink) 0 0) 0 var(--p) / 100% calc(100% - 2 * var(--p));
+  background-repeat: no-repeat;
+}
+
+.btn[hidden] {
+  display: none;
+}
+
+.btn--alt {
+  --fill: var(--surface);
+  --drop: 0px;
+  font-size: 1.75rem;
+}
+
+.btn--alt:hover {
+  --fill: var(--line);
+}
+
+.btn--alt:active {
+  --drop: 0px;
+}
+
+.btn--sm {
+  --h: 36px;
+  --ls: 0.06em;
+  padding-inline: 0.6em calc(0.6em - var(--ls));
+  font-size: 1.25rem;
+}
+
+/* Play and vote, side by side; stacked on narrow screens. */
+.cta-btns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem 1rem;
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  min-height: 1.6em;
+  padding: 0.2em 0.4em 0.3em;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  /* the key's front edge */
+  box-shadow: inset 0 -3px 0 var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 1.25rem/1 var(--pixel);
+  vertical-align: middle;
+}
+
+kbd svg {
+  width: 0.6em;
+  height: 0.6em;
+  fill: currentColor;
+}
+
+kbd + kbd {
+  margin-left: 0.25em;
+}
+
+/* ─────────────────────────────── landing */
+
+/* One column, centred on the page; text stays left-aligned inside it. */
+.wrap {
+  width: min(100% - 2.5rem, var(--col));
+  margin-inline: auto;
+}
+
+/* The hero leaves room on the first screen for the start of the story: its padding and the
+   logo's width follow the viewport's height. */
+.hero {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 1.5rem;
+  padding: clamp(2rem, 6svh, 4rem) 0 clamp(1.5rem, 4svh, 2.5rem);
+  text-align: center;
+}
+
+.hero h1 {
+  margin: 0;
+  width: min(100%, 40rem, 62svh);
+}
+
+.logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.logo-face {
+  fill: var(--red);
+}
+
+.logo-body {
+  fill: #000;
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: extrude 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes extrude {
+  from {
+    transform: scaleY(0.35);
+  }
+}
+
+.lead {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--dim);
+  font-size: clamp(1.2rem, 1rem + 0.8vw, 1.5rem);
+  line-height: 1.45;
+  text-wrap: balance;
+}
+
+.cta {
+  display: grid;
+  justify-items: center;
+  gap: 1.1rem;
+  margin-top: 0.5rem;
+}
+
+.note {
+  margin: 0;
+  color: var(--mute);
+  font-size: 0.95rem;
+}
+
+/* The lines under the buttons, kept together. */
+.notes {
+  display: grid;
+  gap: 0.2rem;
+  text-wrap: balance;
+}
+
+main > section {
+  padding-block: clamp(3.5rem, 8vw, 6rem);
+}
+
+main > section:first-child {
+  padding-top: clamp(2.5rem, 6svh, 4rem);
+}
+
+main > section + section {
+  border-top: 1px solid var(--line);
+}
+
+h2 {
+  margin: 0 0 2rem;
+  color: var(--ink);
+  font: 400 clamp(2.5rem, 2rem + 2vw, 3.5rem) / 1 var(--pixel);
+  letter-spacing: 0.03em;
+}
+
+h3 {
+  margin: 0;
+  font: 400 1.9rem/1 var(--pixel);
+  letter-spacing: 0.03em;
+}
+
+.prose {
+  max-width: 64ch;
+}
+
+.prose p {
+  margin: 0 0 1.25em;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* The story, with the two pilots and their ships set into the text. */
+.lore {
+  display: flow-root;
+  max-width: none;
+}
+
+.lore strong {
+  font-weight: 650;
+}
+
+/* A paragraph with a picture starts below the pictures before it. */
+.lore .has-art {
+  clear: both;
+}
+
+.lore .p1 {
+  color: var(--p1);
+}
+
+.lore .p2 {
+  color: var(--p2);
+}
+
+/* A pilot or a ship, floated into a paragraph: a still picture, or a turning sprite. */
+.art {
+  display: block;
+  float: right;
+  clear: both;
+  height: auto;
+  margin: 0.25rem 0 0.75rem 2rem;
+  image-rendering: pixelated;
+}
+
+.art--left {
+  float: left;
+  margin: 0.25rem 2rem 0.75rem 0;
+}
+
+.art--head {
+  width: 12rem;
+}
+
+.art--ship {
+  width: 25.375rem; /* twice a ship strip's 203 px frame: fit() lands it on 2 px a sprite pixel */
+}
+
+/* Wide screens: a ship hangs out of the column into the margin on its own side, by up to about
+   half its width, so the text beside it keeps its room. */
+@media (width >= 64rem) {
+  .art.art--ship {
+    --hang: clamp(0rem, (100vw - var(--col)) / 2 - 2.5rem, 13rem);
+    margin-right: calc(-1 * var(--hang));
+  }
+  .art.art--ship.art--left {
+    margin-right: 2rem;
+    margin-left: calc(-1 * var(--hang));
+  }
+}
+
+/* Narrower: there is no margin to hang into, so the ship takes its own line, as wide as fits. */
+@media (width < 64rem) {
+  .art.art--ship {
+    float: none;
+    width: min(100%, 25.375rem);
+    margin: 0.25rem 0 1.25rem;
+  }
+}
+
+/* The turning version: a box one frame in size; the strip slides through it a frame at a time. */
+.sprite {
+  overflow: hidden;
+}
+
+.sprite img {
+  display: block;
+  width: auto;
+  max-width: none;
+  height: 100%;
+  image-rendering: pixelated;
+  animation-name: turn;
+  animation-iteration-count: infinite;
+  animation-timing-function: steps(var(--frames, 24));
+}
+
+@keyframes turn {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* What to do: three rows, a hairline between them. */
+.missions {
+  margin: 0 0 2.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.missions li {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 0.75rem 2rem;
+  padding: 1.6rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.missions li:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.missions h3 {
+  color: var(--red-ink);
+  padding-top: 0.1em;
+}
+
+.missions p {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.missions .keys {
+  margin-top: 0.75rem;
+  color: var(--dim);
+  font-size: 0.95rem;
+}
+
+/* Controls */
+.controls-intro {
+  margin: 0 0 2rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.controls {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+}
+
+.controls th,
+.controls td {
+  padding: 0.7rem 1rem 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.controls thead th {
+  padding-bottom: 0.9rem;
+  color: var(--dim);
+  font: 400 1.35rem/1 var(--pixel);
+  letter-spacing: 0.04em;
+  border-bottom-color: var(--line-strong);
+}
+
+.controls thead .c-p1 {
+  color: var(--p1);
+}
+
+.controls thead .c-p2 {
+  color: var(--p2);
+}
+
+.controls tbody th {
+  font-weight: 600;
+}
+
+.act {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr;
+  align-items: baseline;
+}
+
+.act small {
+  display: block;
+  color: var(--mute);
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+
+.btn-id {
+  color: var(--mute);
+  font: 400 1.15rem/1 var(--pixel);
+}
+
+.controls td {
+  width: 1%;
+  white-space: nowrap;
+}
+
+@media (min-width: 36rem) {
+  .controls td {
+    width: 9rem;
+  }
+}
+
+/* Boards */
+.boards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.5rem 4rem;
+}
+
+.board h3 {
+  margin-bottom: 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--dim);
+}
+
+.board ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 400 1.75rem/1 var(--pixel);
+}
+
+.board li {
+  display: grid;
+  grid-template-columns: 2.2em 1fr auto;
+  align-items: baseline;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.board .rk {
+  color: var(--mute);
+}
+
+.board .sc {
+  font-variant-numeric: tabular-nums;
+}
+
+.board li:first-child .ini,
+.board li:first-child .sc {
+  color: var(--red-ink);
+}
+
+.board-status {
+  min-height: 1.6em;
+  margin: 0.9rem 0 0;
+  color: var(--dim);
+  font-size: 1rem;
+}
+
+.board[data-state='error'] .board-status {
+  color: var(--red-ink);
+}
+
+.retry {
+  margin-top: 0.75rem;
+}
+
+.board[aria-busy='true'] ol {
+  opacity: 0.6;
+}
+
+/* Last call to play */
+.final {
+  display: grid;
+  justify-items: center;
+  gap: 1.5rem;
+  text-align: center;
+}
+
+.final p {
+  margin: 0;
+  color: var(--dim);
+}
+
+.foot {
+  padding: 2rem 0 2.5rem;
+  border-top: 1px solid var(--line);
+  color: var(--mute);
+  font-size: 0.875rem;
+}
+
+.foot p {
+  margin: 0;
+}
+
+@media (max-width: 44rem) {
+  .missions li {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 36rem) {
+  body {
+    font-size: 1.0625rem;
+  }
+  .art {
+    margin-left: 1.1rem;
+  }
+  .art--left {
+    margin: 0.25rem 1.1rem 0.5rem 0;
+  }
+  .art--head {
+    width: 7rem;
+  }
+  .boards {
+    grid-template-columns: 1fr;
+  }
+  .btn:not(.btn--alt) {
+    font-size: 2rem;
+  }
+  .cta-btns {
+    flex-direction: column;
+    justify-self: stretch;
+  }
+  /* full width: the label needs little padding, and the long one shrinks on the narrowest phones */
+  .cta-btns .btn {
+    padding-inline: 0.5em calc(0.5em - var(--ls));
+  }
+  .cta-btns .btn--alt {
+    font-size: min(1.75rem, 7.6vw);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-body,
+  .sprite img {
+    animation: none;
+  }
+}
+
+/* ─────────────────────────────── play page: light page, black stage for the game */
+
+.play {
+  --bar: 3rem;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--bar) minmax(0, 1fr) auto;
+  grid-template-areas: 'bar' 'game' 'pads';
+}
+
+.play-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1rem;
+}
+
+.play-back {
+  gap: 0.4em;
+}
+
+.play-back svg {
+  width: 0.7em;
+  height: 0.7em;
+  fill: var(--red);
+}
+
+.play-hint {
+  margin: 0;
+  color: var(--dim);
+  font: 400 1.25rem/1 var(--pixel);
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+#game-root {
+  grid-area: game;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.pads {
+  grid-area: pads;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 2rem;
+  padding: 0.6rem 1rem 0.8rem;
+}
+
+.pad h2 {
+  margin: 0 0 0.5rem;
+  font: 400 1.25rem/1 var(--pixel);
+  letter-spacing: 0.04em;
+}
+
+.pad--p1 h2 {
+  color: var(--p1);
+}
+
+.pad--p2 h2 {
+  color: var(--p2);
+}
+
+.pad dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+
+.pad dl div {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pad dt,
+.pad dd {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.pad dt {
+  display: flex;
+}
+
+.pad dd {
+  color: var(--dim);
+  font: 400 1.05rem/1 var(--pixel);
+  letter-spacing: 0.03em;
+}
+
+.pad kbd {
+  font-size: 1rem;
+}
+
+/* Wide screens: the 4:3 picture in the middle, each player's keys at their own side. */
+@media (min-aspect-ratio: 7/4) and (min-width: 62rem) {
+  .play {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-rows: var(--bar) minmax(0, 1fr);
+    grid-template-areas:
+      'bar bar bar'
+      'p1 game p2';
+  }
+  #game-root {
+    width: calc((100dvh - var(--bar)) * 4 / 3);
+  }
+  .pads {
+    display: contents;
+  }
+  .pad {
+    align-self: center;
+    padding: 0 1rem;
+  }
+  .pad--p1 {
+    grid-area: p1;
+    justify-self: end;
+  }
+  .pad--p2 {
+    grid-area: p2;
+    justify-self: start;
+  }
+  .pad h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .pad dl {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .pad dd {
+    font-size: 1.2rem;
+  }
+  .pad kbd {
+    font-size: 1.1rem;
+  }
+}
+
+/* ─────────────────────────────── 404 */
+
+.lost {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1.5rem;
+  min-height: 100svh;
+  padding: 2rem;
+  text-align: center;
+}
+
+.lost h1 {
+  margin: 0;
+  color: var(--red-ink);
+  font: 400 6rem/1 var(--pixel);
+}
+
+.lost p {
+  margin: 0;
+  color: var(--dim);
+}

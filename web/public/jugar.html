@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jugar · 2075</title>
+    <meta name="description" content="Juega 2075 en el navegador: rescate aéreo para 1 o 2 jugadores, con teclado." />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/v.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/site.css" />
+  </head>
+  <body class="play">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="arrow" viewBox="0 0 8 8"><path d="M4 .5 7.5 6.5H.5z" /></symbol>
+    </svg>
+
+    <header class="play-bar">
+      <a class="play-back btn btn--alt btn--sm" href="/">
+        <svg aria-hidden="true" viewBox="0 0 8 8"><use href="#arrow" transform="rotate(-90 4 4)" /></svg>
+        VOLVER
+      </a>
+      <p class="play-hint">ENTER: UN JUGADOR · 2: ENTRA EL JUGADOR 2</p>
+    </header>
+
+    <main id="game-root" aria-label="2075, el juego"></main>
+
+    <div class="pads">
+      <aside class="pad pad--p1" aria-labelledby="pad1">
+        <h2 id="pad1">JUGADOR 1</h2>
+        <dl>
+          <div><dt><kbd>W</kbd></dt><dd>BAJAR</dd></div>
+          <div><dt><kbd>S</kbd></dt><dd>SUBIR</dd></div>
+          <div><dt><kbd>A</kbd><kbd>D</kbd></dt><dd>GIRAR</dd></div>
+          <div><dt><kbd>U</kbd></dt><dd>DISPARAR</dd></div>
+          <div><dt><kbd>I</kbd></dt><dd>GIRO IZQ.</dd></div>
+          <div><dt><kbd>O</kbd></dt><dd>GIRO DER.</dd></div>
+          <div><dt><kbd>J</kbd></dt><dd>IMPULSO</dd></div>
+          <div><dt><kbd>K</kbd></dt><dd>SOLTAR AGUA</dd></div>
+          <div><dt><kbd>L</kbd></dt><dd>SALTAR DIÁLOGO</dd></div>
+          <div><dt><kbd>ENTER</kbd></dt><dd>START</dd></div>
+        </dl>
+      </aside>
+      <aside class="pad pad--p2" aria-labelledby="pad2">
+        <h2 id="pad2">JUGADOR 2</h2>
+        <dl>
+          <div>
+            <dt><kbd><svg aria-hidden="true" viewBox="0 0 8 8"><use href="#arrow" /></svg><span class="vh">Flecha arriba</span></kbd></dt>
+            <dd>BAJAR</dd>
+          </div>
+          <div>
+            <dt><kbd><svg aria-hidden="true" viewBox="0 0 8 8"><use href="#arrow" transform="rotate(180 4 4)" /></svg><span class="vh">Flecha abajo</span></kbd></dt>
+            <dd>SUBIR</dd>
+          </div>
+          <div>
+            <dt>
+              <kbd><svg aria-hidden="true" viewBox="0 0 8 8"><use href="#arrow" transform="rotate(-90 4 4)" /></svg><span class="vh">Flecha izquierda</span></kbd><kbd><svg aria-hidden="true" viewBox="0 0 8 8"><use href="#arrow" transform="rotate(90 4 4)" /></svg><span class="vh">Flecha derecha</span></kbd>
+            </dt>
+            <dd>GIRAR</dd>
+          </div>
+          <div><dt><kbd>R</kbd></dt><dd>DISPARAR</dd></div>
+          <div><dt><kbd>T</kbd></dt><dd>GIRO IZQ.</dd></div>
+          <div><dt><kbd>Y</kbd></dt><dd>GIRO DER.</dd></div>
+          <div><dt><kbd>F</kbd></dt><dd>IMPULSO</dd></div>
+          <div><dt><kbd>G</kbd></dt><dd>SOLTAR AGUA</dd></div>
+          <div><dt><kbd>H</kbd></dt><dd>SALTAR DIÁLOGO</dd></div>
+          <div><dt><kbd>2</kbd></dt><dd>START</dd></div>
+        </dl>
+      </aside>
+    </div>
+
+    <script>
+      // The page never scrolls: P2's stick is the arrow keys.
+      addEventListener('keydown', (e) => {
+        if (e.key.startsWith('Arrow') || e.key === ' ') e.preventDefault();
+      });
+
+      // Storage for the game, defined before game.js loads. The game's two tables of records
+      // live on the site's shared leaderboard; any other key stays in this browser.
+      // The server merges what it is sent into its board and never deletes rows, so `set`
+      // can only add scores. A copy is kept in localStorage for when the site is unreachable.
+      (() => {
+        const MODES = { '2075.top': 1, '2075.top2': 2 }; // exact keys only: one table each
+        const ROWS = 5; // the game's table holds five
+        const local = {
+          get(key) {
+            try {
+              const raw = localStorage.getItem(key);
+              return raw === null ? { found: false, value: null } : { found: true, value: JSON.parse(raw) };
+            } catch {
+              return { found: false, value: null };
+            }
+          },
+          set(key, value) {
+            try {
+              localStorage.setItem(key, JSON.stringify(value));
+            } catch {}
+          },
+          remove(key) {
+            try {
+              localStorage.removeItem(key);
+            } catch {}
+          },
+        };
+        const url = (mode) => '/api/top?mode=' + mode;
+
+        window.platanusArcadeStorage = {
+          async get(key) {
+            const mode = MODES[key];
+            if (!mode) return local.get(key);
+            try {
+              const res = await fetch(url(mode), { headers: { accept: 'application/json' } });
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              const rows = (await res.json()).rows.slice(0, ROWS);
+              local.set(key, rows);
+              return { found: true, value: rows };
+            } catch {
+              return local.get(key);
+            }
+          },
+          async set(key, value) {
+            local.set(key, value);
+            const mode = MODES[key];
+            if (!mode) return;
+            const res = await fetch(url(mode), {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(value),
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+          },
+          async remove(key) {
+            // The shared board cannot be cleared from here: only this browser's copy goes.
+            local.remove(key);
+          },
+        };
+      })();
+    </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"
+      integrity="sha384-cJpI3yuICryqltDcFHLunsV3lpWFnx502EbNR2OZDin/z/JM2EamUFHYEeneZHfT"
+      crossorigin="anonymous"
+    ></script>
+    <script src="/game.js"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "2075-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply game-2075-leaderboard --local",
+    "db:migrate:remote": "wrangler d1 migrations apply game-2075-leaderboard --remote",
+    "dev": "npm run db:migrate:local && wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.164.0"
+  }
+}
