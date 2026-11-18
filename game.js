@@ -1,4 +1,4 @@
-// 2075
+// 2075: the future we have
 //
 // A small software renderer shown through Phaser 3. Everything is drawn into one low-resolution
 // pixel buffer and scaled up with hard pixels:
